@@ -7,6 +7,7 @@ module.exports = {
       env: {
         NODE_ENV: "production",
         PORT: "3011",
+        MONGODB_URI: process.env.MONGODB_URI,
       },
       instances: 1,
       autorestart: true,
