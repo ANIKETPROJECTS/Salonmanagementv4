@@ -7,7 +7,7 @@ module.exports = {
       env: {
         NODE_ENV: "production",
         PORT: "3011",
-        MONGODB_URI: process.env.MONGODB_URI,
+        MONGODB_URI: "mongodb+srv://raneaniket23_db_user:sLYRPva3b5poUYaM@salonadmin.h3zbikj.mongodb.net/?appName=SalonAdmin",
       },
       instances: 1,
       autorestart: true,
