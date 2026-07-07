@@ -6,7 +6,7 @@ A full-stack Salon Management System with a React frontend and Express/MongoDB b
 ## Architecture
 
 ### Monorepo Structure (pnpm workspaces)
-- `artifacts/salon-app/` — React + Vite frontend (port 22910, preview path `/`)
+- `artifacts/salon-app/` — React + Vite frontend (port 5173, preview path `/`)
 - `artifacts/api-server/` — Express API server (port 8080, path `/api`)
 - `lib/api-spec/` — OpenAPI specification (source of truth for API)
 - `lib/api-client-react/` — Generated React Query hooks from OpenAPI spec
