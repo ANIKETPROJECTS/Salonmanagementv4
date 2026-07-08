@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { format } from "date-fns";
+import mongoose from "mongoose";
 import { Customer, Appointment, Bill, CustomerMembership } from "../models/index.js";
 
 const router = Router();
@@ -99,10 +100,24 @@ async function migrateFamilyMembersToCustomers() {
   return migrated;
 }
 
-// Run migration on route mount (idempotent — skips already-migrated members)
-migrateFamilyMembersToCustomers().catch((e) =>
-  console.warn("[migrate] family-members migration error:", e.message)
-);
+// Run migration once the DB connection is actually open (idempotent — skips
+// already-migrated members). Running this at import time races the initial
+// `connectMongo()` call and fails now that buffering is disabled.
+function runMigrationWhenReady() {
+  if (mongoose.connection.readyState === 1) {
+    migrateFamilyMembersToCustomers().catch((e) =>
+      console.warn("[migrate] family-members migration error:", e.message)
+    );
+  } else {
+    mongoose.connection.once("connected", () => {
+      migrateFamilyMembersToCustomers().catch((e) =>
+        console.warn("[migrate] family-members migration error:", e.message)
+      );
+    });
+  }
+}
+
+runMigrationWhenReady();
 
 // ── Migrate endpoint (manual trigger) ─────────────────────────────────────────
 router.post("/customers/migrate-family", async (_req, res) => {
