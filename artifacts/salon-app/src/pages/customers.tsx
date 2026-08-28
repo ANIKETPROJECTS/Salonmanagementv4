@@ -73,6 +73,9 @@ export default function Customers() {
   const [assignedVouchersLoading, setAssignedVouchersLoading] = useState(false);
   const [voucherLedgerSearch, setVoucherLedgerSearch] = useState("");
   const [revokingVoucherId, setRevokingVoucherId] = useState<string | null>(null);
+  const [editingVoucherId, setEditingVoucherId] = useState<string | null>(null);
+  const [editingVoucherIssueDate, setEditingVoucherIssueDate] = useState("");
+  const [savingVoucherDateId, setSavingVoucherDateId] = useState<string | null>(null);
   const [customerVouchers, setCustomerVouchers] = useState<any[]>([]);
   const [customerVouchersLoading, setCustomerVouchersLoading] = useState(false);
 
@@ -382,6 +385,40 @@ export default function Customers() {
       toast({ title: "Could not revoke voucher", description: error.message, variant: "destructive" });
     } finally {
       setRevokingVoucherId(null);
+    }
+  };
+
+  const startEditingVoucherDate = (voucher: any) => {
+    setEditingVoucherId(voucher.id || voucher._id);
+    setEditingVoucherIssueDate(voucher.issueDate || "");
+  };
+
+  const cancelEditingVoucherDate = () => {
+    setEditingVoucherId(null);
+    setEditingVoucherIssueDate("");
+  };
+
+  const handleSaveVoucherIssueDate = async (voucher: any) => {
+    const voucherId = voucher.id || voucher._id;
+    if (!voucherId || !editingVoucherIssueDate) return;
+
+    setSavingVoucherDateId(voucherId);
+    try {
+      const res = await fetch(`${API_BASE}/customer-vouchers/${voucherId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ issueDate: editingVoucherIssueDate }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Failed to update issue date.");
+      setAssignedVouchers((previous) => previous.map((item) => item.id === voucherId ? body : item));
+      setCustomerVouchers((previous) => previous.map((item) => item.id === voucherId ? body : item));
+      toast({ title: "Issue date updated", description: `${body.voucherCode} now expires on ${body.expiryDate}.` });
+      cancelEditingVoucherDate();
+    } catch (error: any) {
+      toast({ title: "Could not update issue date", description: error.message, variant: "destructive" });
+    } finally {
+      setSavingVoucherDateId(null);
     }
   };
 
@@ -820,10 +857,53 @@ export default function Customers() {
                         <p className="text-sm text-primary font-semibold mt-0.5">{voucher.templateName} · ₹{Number(voucher.amount).toLocaleString("en-IN")}</p>
                         <p className="text-xs text-muted-foreground mt-1">{voucher.voucherCode}</p>
                       </div>
-                      <div className="text-xs text-muted-foreground min-w-[12rem]">
-                        <p>Issued: <span className="font-medium text-foreground">{voucher.issueDate ? format(parseISO(voucher.issueDate), "dd MMM yyyy") : "—"}</span></p>
-                        <p className="mt-1">Expires: <span className="font-medium text-foreground">{voucher.expiryDate ? format(parseISO(voucher.expiryDate), "dd MMM yyyy") : "—"}</span></p>
-                      </div>
+                      {editingVoucherId === voucherId ? (
+                        <div className="min-w-[14rem]">
+                          <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">Issue date</label>
+                          <input
+                            type="date"
+                            value={editingVoucherIssueDate}
+                            onChange={(e) => setEditingVoucherIssueDate(e.target.value)}
+                            className="w-full rounded-lg border border-border bg-background px-2.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-primary/20"
+                          />
+                          <p className="text-[10px] text-muted-foreground mt-1">Expiry recalculates one month later.</p>
+                          <div className="flex gap-2 mt-2">
+                            <button
+                              type="button"
+                              onClick={() => handleSaveVoucherIssueDate(voucher)}
+                              disabled={savingVoucherDateId === voucherId || !editingVoucherIssueDate}
+                              className="px-2.5 py-1.5 rounded-lg bg-primary text-white text-[10px] font-semibold hover:bg-primary/90 disabled:opacity-50"
+                            >
+                              {savingVoucherDateId === voucherId ? "Saving..." : "Save"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={cancelEditingVoucherDate}
+                              disabled={savingVoucherDateId === voucherId}
+                              className="px-2.5 py-1.5 rounded-lg border border-border text-[10px] font-semibold hover:bg-muted disabled:opacity-50"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-xs text-muted-foreground min-w-[12rem]">
+                          <p className="flex items-center gap-1">
+                            Issued: <span className="font-medium text-foreground">{voucher.issueDate ? format(parseISO(voucher.issueDate), "dd MMM yyyy") : "—"}</span>
+                            {voucher.status !== "redeemed" && voucher.status !== "revoked" && (
+                              <button
+                                type="button"
+                                onClick={() => startEditingVoucherDate(voucher)}
+                                title="Edit issue date"
+                                className="p-1 rounded text-secondary hover:bg-secondary/10 transition-colors"
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </button>
+                            )}
+                          </p>
+                          <p className="mt-1">Expires: <span className="font-medium text-foreground">{voucher.expiryDate ? format(parseISO(voucher.expiryDate), "dd MMM yyyy") : "—"}</span></p>
+                        </div>
+                      )}
                       <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${statusClass}`}>{statusLabel}</span>
                       {voucher.status === "assigned" && (
                         <button

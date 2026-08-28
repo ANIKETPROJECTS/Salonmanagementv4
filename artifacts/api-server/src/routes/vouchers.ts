@@ -119,6 +119,53 @@ router.post("/customer-vouchers/:voucherId/revoke", async (req, res) => {
   res.json(serializeVoucher(voucher));
 });
 
+router.patch("/customer-vouchers/:voucherId", async (req, res) => {
+  const issueDate = String(req.body?.issueDate || "");
+  const expiryDate = getVoucherExpiryDate(issueDate);
+  if (!expiryDate) {
+    return res.status(400).json({ error: "Issue date must be a valid date." });
+  }
+
+  const existing = await CustomerVoucher.findById(req.params.voucherId);
+  if (!existing) return res.status(404).json({ error: "Voucher not found" });
+  if (!["assigned", "expired"].includes(existing.status)) {
+    return res.status(409).json({ error: "Only assigned or expired vouchers can have their issue date edited." });
+  }
+
+  const today = todayDate();
+  const becomesActive = issueDate <= today && expiryDate >= today;
+  if (becomesActive) {
+    const duplicate = await CustomerVoucher.findOne({
+      _id: { $ne: existing._id },
+      customerId: existing.customerId,
+      templateId: existing.templateId,
+      status: "assigned",
+      issueDate: { $lte: today },
+      expiryDate: { $gte: today },
+    });
+    if (duplicate) {
+      return res.status(409).json({
+        error: `${getVoucherTemplate(existing.templateId)?.name || "This voucher"} is already active for ${existing.customerName}.`,
+      });
+    }
+  }
+
+  try {
+    const voucher = await CustomerVoucher.findOneAndUpdate(
+      { _id: existing._id, status: { $in: ["assigned", "expired"] } },
+      { $set: { issueDate, expiryDate, status: becomesActive || issueDate > today ? "assigned" : "expired" } },
+      { new: true }
+    );
+    if (!voucher) return res.status(409).json({ error: "This voucher can no longer be edited." });
+    res.json(serializeVoucher(voucher));
+  } catch (error: any) {
+    if (error?.code === 11000) {
+      return res.status(409).json({ error: "This customer already has an active voucher of the same type." });
+    }
+    throw error;
+  }
+});
+
 router.get("/customer-vouchers/:voucherId", async (req, res) => {
   const voucher = await CustomerVoucher.findById(req.params.voucherId);
   if (!voucher) return res.status(404).json({ error: "Voucher not found" });
