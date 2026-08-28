@@ -12,7 +12,7 @@ A full-stack Salon Management System with a React frontend and Express/MongoDB b
 - `lib/api-client-react/` — Generated React Query hooks from OpenAPI spec
 
 ### Frontend (salon-app)
-- React 18 + Vite + TypeScript
+- React + Vite + TypeScript
 - Tailwind CSS with violet/purple primary, rose/pink secondary color scheme
 - Playfair Display (serif) + Inter (sans) fonts
 - Wouter for client-side routing
@@ -64,6 +64,9 @@ A full-stack Salon Management System with a React frontend and Express/MongoDB b
 - `SESSION_SECRET` — Session secret (configured)
 
 ## Development
-- API server auto-builds and starts on workflow start
-- Frontend Vite dev server hot-reloads on changes
-- No proxy needed — Replit routes `/api/*` to port 8080 and `/` to port 22910
+- Install dependencies with `pnpm install --no-frozen-lockfile`
+- Start the full project with the `Project` workflow
+- Frontend Vite dev server runs on port 5000 and hot-reloads on changes
+- API server auto-builds and runs on port 8080
+- Vite proxies `/api/*` requests to the API server on port 8080
+- The API requires the `MONGODB_URI` Replit Secret to connect to MongoDB

@@ -51,8 +51,8 @@ outputType = "console"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "PORT=8000 pnpm --filter @workspace/api-server run dev"
-waitForPort = 8000
+args = "PORT=8080 pnpm --filter @workspace/api-server run dev"
+waitForPort = 8080
 
 [agent]
 stack = "BEST_EFFORT_FALLBACK"

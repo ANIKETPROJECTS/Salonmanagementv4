@@ -5,12 +5,12 @@ kind = "web"
   id = "salon-app-main"
 
   [[services]]
-  localPort = 5173
+  localPort = 5000
   name = "Salon App"
   paths = ["/"]
 
   [services.env]
-  PORT = "5173"
+  PORT = "5000"
   BASE_PATH = "/"
 
   [services.development]
