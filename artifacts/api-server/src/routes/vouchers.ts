@@ -36,18 +36,62 @@ router.post("/customer-vouchers", async (req, res) => {
   const customer = await Customer.findById(customerId);
   if (!customer) return res.status(404).json({ error: "Customer not found" });
 
-  const voucher = await CustomerVoucher.create({
-    voucherCode: voucherCode(template.amount),
+  const normalizedCustomerId = customer._id.toString();
+  const today = todayDate();
+
+  // An expired assignment should not block a new assignment of the same
+  // template, even if its status has not been opened in the UI yet.
+  await CustomerVoucher.updateMany(
+    { customerId: normalizedCustomerId, templateId: template.id, status: "assigned", expiryDate: { $lt: today } },
+    { $set: { status: "expired" } }
+  );
+
+  const existingActive = await CustomerVoucher.findOne({
+    customerId: normalizedCustomerId,
     templateId: template.id,
-    amount: template.amount,
-    customerId: customer._id.toString(),
-    customerName: customer.name,
-    issueDate,
-    expiryDate,
     status: "assigned",
+    issueDate: { $lte: today },
+    expiryDate: { $gte: today },
   });
+  if (existingActive) {
+    return res.status(409).json({
+      error: `${template.name} is already active for ${customer.name}.`,
+      existingVoucher: serializeVoucher(existingActive),
+    });
+  }
+
+  let voucher;
+  try {
+    voucher = await CustomerVoucher.create({
+      voucherCode: voucherCode(template.amount),
+      templateId: template.id,
+      amount: template.amount,
+      customerId: normalizedCustomerId,
+      customerName: customer.name,
+      issueDate,
+      expiryDate,
+      status: "assigned",
+    });
+  } catch (error: any) {
+    // The schema's partial unique index also protects against two assignment
+    // requests arriving at exactly the same time.
+    if (error?.code === 11000) {
+      return res.status(409).json({ error: `${template.name} is already active for ${customer.name}.` });
+    }
+    throw error;
+  }
 
   res.status(201).json(serializeVoucher(voucher));
+});
+
+router.get("/customer-vouchers", async (_req, res) => {
+  const today = todayDate();
+  await CustomerVoucher.updateMany(
+    { status: "assigned", expiryDate: { $lt: today } },
+    { $set: { status: "expired" } }
+  );
+  const vouchers = await CustomerVoucher.find().sort({ createdAt: -1 });
+  res.json({ vouchers: vouchers.map(serializeVoucher) });
 });
 
 router.get("/customer-vouchers/customer/:customerId", async (req, res) => {
@@ -61,6 +105,18 @@ router.get("/customer-vouchers/customer/:customerId", async (req, res) => {
 
   const vouchers = await CustomerVoucher.find({ customerId }).sort({ createdAt: -1 });
   res.json({ vouchers: vouchers.map(serializeVoucher) });
+});
+
+router.post("/customer-vouchers/:voucherId/revoke", async (req, res) => {
+  const voucher = await CustomerVoucher.findOneAndUpdate(
+    { _id: req.params.voucherId, status: "assigned" },
+    { $set: { status: "revoked" } },
+    { new: true }
+  );
+  if (!voucher) {
+    return res.status(409).json({ error: "Only an active assigned voucher can be revoked." });
+  }
+  res.json(serializeVoucher(voucher));
 });
 
 router.get("/customer-vouchers/:voucherId", async (req, res) => {

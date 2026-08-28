@@ -375,7 +375,7 @@ export const CustomerMembership =
   mongoose.model<ICustomerMembership>("CustomerMembership", CustomerMembershipSchema);
 
 // ── Customer Voucher ────────────────────────────────────────
-export type CustomerVoucherStatus = "assigned" | "redeemed" | "expired";
+export type CustomerVoucherStatus = "assigned" | "redeemed" | "expired" | "revoked";
 
 export interface ICustomerVoucher extends Document {
   voucherCode: string;
@@ -400,11 +400,15 @@ const CustomerVoucherSchema = new Schema<ICustomerVoucher>(
     customerName: { type: String, required: true },
     issueDate: { type: String, required: true },
     expiryDate: { type: String, required: true },
-    status: { type: String, enum: ["assigned", "redeemed", "expired"], default: "assigned", index: true },
+    status: { type: String, enum: ["assigned", "redeemed", "expired", "revoked"], default: "assigned", index: true },
     redeemedBillId: String,
     redeemedAt: Date,
   },
   { timestamps: true }
+);
+CustomerVoucherSchema.index(
+  { customerId: 1, templateId: 1 },
+  { unique: true, partialFilterExpression: { status: "assigned" } }
 );
 
 export const CustomerVoucher =
