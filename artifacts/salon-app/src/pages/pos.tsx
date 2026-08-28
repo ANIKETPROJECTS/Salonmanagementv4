@@ -206,14 +206,33 @@ export default function POS() {
     return { pct: plan?.discountPercent || 0, name: plan?.name || cartMem.name };
   }, [cart.map(i => `${i.type}:${i.itemId}`).join(","), membershipPlans]); // eslint-disable-line
 
-  // Auto-discount: anniversary 40% > birthday 30% > existing membership % > new cart membership %
+  // Auto-discount: special-day discounts stack with an active membership discount.
+  // Memberships without an explicit discount still receive the standard 20% member discount.
   const { autoDiscountPct, specialLabel, membershipLabel } = useMemo(() => {
+    const hasActiveMembership = Boolean(customerMembership);
+    const configuredMembershipPct = Number(customerMembership?.discountPercent);
+    const membershipPct = hasActiveMembership
+      ? (configuredMembershipPct > 0 ? configuredMembershipPct : 20)
+      : 0;
+
+    const getSpecialDayDiscount = (label: string, specialPct: number) => {
+      const totalPct = Math.min(100, specialPct + membershipPct);
+      const breakdown = membershipPct > 0
+        ? ` (${specialPct}% + ${membershipPct}% membership)`
+        : "";
+      return {
+        autoDiscountPct: totalPct,
+        specialLabel: `${label} — ${totalPct}% off${breakdown}`,
+        membershipLabel: null,
+      };
+    };
+
     if (customerAnniversary?.length >= 7 && customerAnniversary.substring(5) === todayMMDD)
-      return { autoDiscountPct: 40, specialLabel: "💐 Anniversary Special — 40% off!", membershipLabel: null };
+      return getSpecialDayDiscount("💐 Anniversary Special", 40);
     if (customerDob?.length >= 7 && customerDob.substring(5) === todayMMDD)
-      return { autoDiscountPct: 30, specialLabel: "🎂 Birthday Special — 30% off!", membershipLabel: null };
-    if (customerMembership?.discountPercent > 0)
-      return { autoDiscountPct: customerMembership.discountPercent, specialLabel: null, membershipLabel: `🏷 ${customerMembership.membershipName} — ${customerMembership.discountPercent}% off` };
+      return getSpecialDayDiscount("🎂 Birthday Special", 30);
+    if (hasActiveMembership && membershipPct > 0)
+      return { autoDiscountPct: membershipPct, specialLabel: null, membershipLabel: `🏷 ${customerMembership.membershipName} — ${membershipPct}% off` };
     if (cartMembershipDiscount.pct > 0)
       return { autoDiscountPct: cartMembershipDiscount.pct, specialLabel: null, membershipLabel: `👑 ${cartMembershipDiscount.name} — ${cartMembershipDiscount.pct}% off on services` };
     return { autoDiscountPct: 0, specialLabel: null, membershipLabel: null };
@@ -1046,7 +1065,7 @@ export default function POS() {
                   <span className="font-semibold text-white/70">₹{(subtotal + totalItemDiscount).toLocaleString("en-IN", { maximumFractionDigits: 0 })}</span>
                 </div>
                 <div className="flex justify-between text-sm items-center">
-                  <span className="text-amber-300 font-semibold">{specialLabel.replace(/ — \d+% off!/, "")} Discount</span>
+                  <span className="text-amber-300 font-semibold">{specialLabel.replace(/ — .*$/, "")} Discount</span>
                   <span className="font-bold text-amber-300">−₹{totalItemDiscount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</span>
                 </div>
                 <div className="flex justify-between text-sm">
