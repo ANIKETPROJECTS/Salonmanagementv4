@@ -16,6 +16,10 @@ function voucherCode(amount: number) {
   return `TT-${amount}-${randomUUID().slice(0, 8).toUpperCase()}`;
 }
 
+function isMongoId(value: string) {
+  return /^[a-f\d]{24}$/i.test(value);
+}
+
 router.get("/customer-vouchers/templates", (_req, res) => {
   res.json({ templates: VOUCHER_TEMPLATES, terms: VOUCHER_TERMS });
 });
@@ -108,6 +112,9 @@ router.get("/customer-vouchers/customer/:customerId", async (req, res) => {
 });
 
 router.post("/customer-vouchers/:voucherId/revoke", async (req, res) => {
+  if (!isMongoId(req.params.voucherId)) {
+    return res.status(404).json({ error: "Voucher not found" });
+  }
   const voucher = await CustomerVoucher.findOneAndUpdate(
     { _id: req.params.voucherId, status: "assigned" },
     { $set: { status: "revoked" } },
@@ -120,6 +127,9 @@ router.post("/customer-vouchers/:voucherId/revoke", async (req, res) => {
 });
 
 router.patch("/customer-vouchers/:voucherId", async (req, res) => {
+  if (!isMongoId(req.params.voucherId)) {
+    return res.status(404).json({ error: "Voucher not found" });
+  }
   const issueDate = String(req.body?.issueDate || "");
   const expiryDate = getVoucherExpiryDate(issueDate);
   if (!expiryDate) {
@@ -167,6 +177,9 @@ router.patch("/customer-vouchers/:voucherId", async (req, res) => {
 });
 
 router.get("/customer-vouchers/:voucherId", async (req, res) => {
+  if (!isMongoId(req.params.voucherId)) {
+    return res.status(404).json({ error: "Voucher not found" });
+  }
   const voucher = await CustomerVoucher.findById(req.params.voucherId);
   if (!voucher) return res.status(404).json({ error: "Voucher not found" });
   res.json(serializeVoucher(voucher));
