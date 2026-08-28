@@ -67,6 +67,7 @@ export default function Customers() {
     templateId: "",
     issueDate: format(new Date(), "yyyy-MM-dd"),
   });
+  const [voucherCustomerSearch, setVoucherCustomerSearch] = useState("");
   const [voucherSaving, setVoucherSaving] = useState(false);
   const [customerVouchers, setCustomerVouchers] = useState<any[]>([]);
   const [customerVouchersLoading, setCustomerVouchersLoading] = useState(false);
@@ -131,6 +132,16 @@ export default function Customers() {
     }
     return result;
   }, [allCustomers]);
+
+  const filteredVoucherCustomers = useMemo(() => {
+    const query = voucherCustomerSearch.trim().toLowerCase();
+    if (!query) return assignableCustomers;
+    return assignableCustomers.filter((customer) =>
+      [customer.name, customer.phone, customer._parentName]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(query))
+    );
+  }, [assignableCustomers, voucherCustomerSearch]);
 
   const filteredSorted = useMemo(() => {
     let list = [...allCustomers];
@@ -305,11 +316,24 @@ export default function Customers() {
   };
 
   const resetVoucherForm = () => {
+    setVoucherCustomerSearch("");
     setVoucherForm({
       customerId: "",
       templateId: "",
       issueDate: format(new Date(), "yyyy-MM-dd"),
     });
+  };
+
+  const openAssignVoucherPage = (customerId = "") => {
+    setSearch("");
+    setPage(1);
+    setVoucherCustomerSearch("");
+    setVoucherForm({
+      customerId,
+      templateId: "",
+      issueDate: format(new Date(), "yyyy-MM-dd"),
+    });
+    setShowAssignVoucher(true);
   };
 
   const handleAssignVoucher = async (e: React.FormEvent) => {
@@ -504,6 +528,186 @@ export default function Customers() {
     } finally { setDeleteSubMemberLoading(false); }
   };
 
+  if (showAssignVoucher) {
+    const selectedVoucherCustomer = assignableCustomers.find(
+      (customer) => (customer.id || customer._id) === voucherForm.customerId
+    );
+
+    return (
+      <div className="p-8 max-w-7xl mx-auto animate-in fade-in duration-500" style={{ fontFamily: "'Poppins', sans-serif" }}>
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
+          <div className="flex items-center gap-4">
+            <button
+              type="button"
+              onClick={() => { setShowAssignVoucher(false); resetVoucherForm(); }}
+              className="p-3 rounded-xl border border-border hover:bg-muted transition-colors"
+              aria-label="Back to customers"
+            >
+              <ChevronDown className="w-5 h-5 rotate-90" />
+            </button>
+            <div>
+              <p className="text-sm font-semibold text-secondary mb-1">Customers / Gift Vouchers</p>
+              <h1 className="text-3xl font-serif font-bold text-primary">Assign Gift Voucher</h1>
+              <p className="text-muted-foreground mt-1">Issue a voucher with enough space to review every detail.</p>
+            </div>
+          </div>
+        </div>
+
+        <form onSubmit={handleAssignVoucher} className="space-y-6">
+          <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-6">
+            <section className="bg-card rounded-2xl border border-border/50 shadow-sm p-6">
+              <div className="flex items-start justify-between gap-3 mb-4">
+                <div>
+                  <h2 className="text-lg font-bold text-primary">Choose a customer</h2>
+                  <p className="text-sm text-muted-foreground mt-1">Search by name, phone, or family relationship.</p>
+                </div>
+                <User className="w-5 h-5 text-secondary shrink-0" />
+              </div>
+
+              <div className="relative mb-4">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <input
+                  type="search"
+                  autoFocus
+                  value={voucherCustomerSearch}
+                  onChange={(e) => setVoucherCustomerSearch(e.target.value)}
+                  placeholder="Search customers by name or phone..."
+                  className="w-full pl-10 pr-4 py-3 rounded-xl border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
+                />
+              </div>
+
+              {selectedVoucherCustomer && (
+                <div className="mb-4 rounded-xl border border-secondary/40 bg-secondary/5 px-4 py-3 flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm shrink-0">
+                    {(selectedVoucherCustomer.name || "??").substring(0, 2).toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-secondary">Selected customer</p>
+                    <p className="font-bold text-foreground truncate">{selectedVoucherCustomer.name}</p>
+                    <p className="text-xs text-muted-foreground">{selectedVoucherCustomer.phone || "No phone"}{selectedVoucherCustomer._parentName ? ` · Family of ${selectedVoucherCustomer._parentName}` : ""}</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="border border-border/60 rounded-xl overflow-hidden">
+                <div className="px-4 py-2.5 bg-muted/30 text-xs font-semibold text-muted-foreground flex justify-between">
+                  <span>{filteredVoucherCustomers.length} customer{filteredVoucherCustomers.length !== 1 ? "s" : ""} found</span>
+                  <span>Select one</span>
+                </div>
+                <div className="max-h-[28rem] overflow-y-auto divide-y divide-border/50">
+                  {filteredVoucherCustomers.length === 0 ? (
+                    <div className="p-8 text-center text-sm text-muted-foreground">No customers match this search.</div>
+                  ) : (
+                    filteredVoucherCustomers.map((customer) => {
+                      const customerId = customer.id || customer._id;
+                      const selected = voucherForm.customerId === customerId;
+                      return (
+                        <button
+                          type="button"
+                          key={customerId}
+                          onClick={() => setVoucherForm((prev) => ({ ...prev, customerId }))}
+                          className={`w-full text-left px-4 py-3 flex items-center gap-3 transition-colors ${selected ? "bg-primary/10" : "hover:bg-muted/30"}`}
+                        >
+                          <div className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${selected ? "bg-primary text-white" : "bg-muted text-primary"}`}>
+                            {(customer.name || "??").substring(0, 2).toUpperCase()}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="font-semibold text-sm text-foreground truncate">{customer.name}</p>
+                            <p className="text-xs text-muted-foreground truncate">
+                              {customer.phone || "No phone"}{customer._parentName ? ` · Family of ${customer._parentName}` : ""}
+                            </p>
+                          </div>
+                          {selected && <BadgeCheck className="w-5 h-5 text-primary shrink-0" />}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </section>
+
+            <section className="bg-card rounded-2xl border border-border/50 shadow-sm p-6">
+              <div className="flex flex-wrap items-start justify-between gap-4 mb-5">
+                <div>
+                  <h2 className="text-lg font-bold text-primary">Voucher details</h2>
+                  <p className="text-sm text-muted-foreground mt-1">Select the artwork and set the issue date.</p>
+                </div>
+                <div className="min-w-[13rem]">
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">Issued on *</label>
+                  <input
+                    type="date"
+                    value={voucherForm.issueDate}
+                    onChange={(e) => setVoucherForm((prev) => ({ ...prev, issueDate: e.target.value }))}
+                    className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    required
+                  />
+                  <p className="text-xs text-muted-foreground mt-1.5">
+                    Expires {voucherForm.issueDate ? format(addMonths(parseISO(voucherForm.issueDate), 1), "dd MMM yyyy") : "—"}.
+                  </p>
+                </div>
+              </div>
+
+              <label className="block text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">Voucher artwork *</label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {voucherTemplates.map((template) => {
+                  const selected = voucherForm.templateId === template.id;
+                  return (
+                    <button
+                      type="button"
+                      key={template.id}
+                      onClick={() => setVoucherForm((prev) => ({ ...prev, templateId: template.id }))}
+                      className={`text-left rounded-2xl overflow-hidden border-2 transition-all ${selected ? "border-secondary ring-2 ring-secondary/20 shadow-lg" : "border-border hover:border-secondary/50"}`}
+                    >
+                      <img src={template.frontImage} alt={`${template.name} artwork`} className="w-full aspect-[2.75/1] object-cover" />
+                      <div className="px-4 py-3 flex items-center justify-between bg-muted/20">
+                        <span className="font-bold text-primary">{template.name}</span>
+                        <span className="text-xs font-semibold text-muted-foreground">{selected ? "Selected" : "Select"}</span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              {voucherTemplates.length === 0 && (
+                <p className="text-sm text-muted-foreground bg-muted/20 rounded-xl p-4">Loading voucher templates...</p>
+              )}
+            </section>
+          </div>
+
+          <section className="bg-card rounded-2xl border border-border/50 shadow-sm p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <Ticket className="w-5 h-5 text-secondary" />
+              <div>
+                <h2 className="text-lg font-bold text-primary">Voucher terms</h2>
+                <p className="text-sm text-muted-foreground">These terms will apply when the voucher is redeemed.</p>
+              </div>
+            </div>
+            <ul className="grid grid-cols-1 lg:grid-cols-2 gap-2 lg:gap-x-8 text-sm text-muted-foreground list-disc pl-5">
+              {voucherTerms.map((term) => <li key={term}>{term}</li>)}
+            </ul>
+            <img src="/vouchers/voucher-terms.png" alt="Voucher offer details and terms" className="w-full max-w-4xl mx-auto rounded-xl mt-6 border border-border/50" />
+          </section>
+
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => { setShowAssignVoucher(false); resetVoucherForm(); }}
+              className="px-6 py-3 rounded-xl border border-border text-sm font-semibold hover:bg-muted transition-colors"
+            >
+              Back to Customers
+            </button>
+            <button
+              type="submit"
+              disabled={voucherSaving || !voucherTemplates.length}
+              className="px-7 py-3 rounded-xl bg-secondary text-white text-sm font-semibold hover:bg-secondary/90 transition-colors disabled:opacity-50"
+            >
+              {voucherSaving ? "Assigning..." : "Assign Voucher"}
+            </button>
+          </div>
+        </form>
+      </div>
+    );
+  }
+
   return (
     <div className="p-8 max-w-7xl mx-auto animate-in fade-in duration-500" style={{ fontFamily: "'Poppins', sans-serif" }}>
       <div className="flex justify-between items-center mb-8">
@@ -512,7 +716,7 @@ export default function Customers() {
           <p className="text-muted-foreground mt-1">Manage your clients and their history.</p>
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={() => { resetVoucherForm(); setShowAssignVoucher(true); }}
+          <button onClick={() => openAssignVoucherPage()}
             className="border border-secondary/40 text-secondary px-5 py-3 rounded-xl font-semibold hover:bg-secondary/10 transition-colors flex items-center gap-2">
             <Ticket className="w-5 h-5" /> Assign Voucher
           </button>
@@ -1487,11 +1691,7 @@ export default function Customers() {
                         <Ticket className="w-4 h-4 text-secondary" /> Gift Vouchers
                       </h4>
                       <button
-                        onClick={() => {
-                          resetVoucherForm();
-                          setVoucherForm((prev) => ({ ...prev, customerId: customerDetail.id || customerDetail._id }));
-                          setShowAssignVoucher(true);
-                        }}
+                        onClick={() => openAssignVoucherPage(customerDetail.id || customerDetail._id)}
                         className="text-xs font-semibold text-secondary hover:underline"
                       >
                         Assign another
