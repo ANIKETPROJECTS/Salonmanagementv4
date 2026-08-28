@@ -1,5 +1,6 @@
 import { Router } from "express";
-import { Bill, Customer, Appointment } from "../models/index.js";
+import { Bill, Customer, CustomerVoucher, Appointment } from "../models/index.js";
+import { todayDate } from "../lib/vouchers.js";
 
 const router = Router();
 
@@ -210,34 +211,141 @@ router.post("/bills", async (req, res) => {
     paymentMethod,
     status,
     notes,
+    voucherId,
   } = req.body;
 
   const billNumber = await generateBillNumber();
 
-  const bill = await Bill.create({
-    billNumber,
-    customerId: customerId || undefined,
-    customerName: customerName || "Walk-in",
-    customerPhone: customerPhone || "",
-    items: items || [],
-    subtotal: subtotal || 0,
-    taxPercent: taxPercent || 0,
-    taxAmount: taxAmount || 0,
-    discountAmount: discountAmount || 0,
-    finalAmount,
-    paymentMethod,
-    status: status || "paid",
-    notes: notes || "",
-  });
+  const billItems = Array.isArray(items) ? items : [];
+  let appliedVoucher: any = null;
+  let voucherAmount = 0;
+  let voucherReserved = false;
 
-  // Update customer totalSpend and totalVisits if linked
-  if (customerId) {
-    await Customer.findByIdAndUpdate(customerId, {
-      $inc: { totalSpend: finalAmount, totalVisits: 1 },
+  try {
+    if (voucherId) {
+      if (!customerId) {
+        return res.status(400).json({ error: "A voucher can only be used by a registered customer." });
+      }
+
+      if (billItems.some((item: any) => item.type === "membership")) {
+        return res.status(400).json({ error: "A voucher cannot be combined with a membership purchase." });
+      }
+
+      const hasOtherDiscount = billItems.some((item: any) => Number(item.discount) > 0) || Number(discountAmount) > 0;
+      if (hasOtherDiscount) {
+        return res.status(400).json({ error: "This voucher cannot be combined with another offer or discount." });
+      }
+
+      const serviceGross = billItems
+        .filter((item: any) => item.type === "service")
+        .reduce((sum: number, item: any) => sum + Math.max(0, Number(item.price) || 0) * Math.max(1, Number(item.quantity) || 1), 0);
+
+      if (serviceGross < 1000) {
+        return res.status(400).json({ error: "A voucher requires at least ₹1,000 in salon services." });
+      }
+
+      const today = todayDate();
+      const candidate = await CustomerVoucher.findOne({
+        _id: voucherId,
+        customerId: String(customerId),
+        status: "assigned",
+      });
+      if (!candidate) {
+        return res.status(409).json({ error: "This voucher is unavailable or has already been used." });
+      }
+      if (candidate.issueDate > today) {
+        return res.status(400).json({ error: "This voucher is not valid before its issue date." });
+      }
+      if (candidate.expiryDate < today) {
+        await CustomerVoucher.findByIdAndUpdate(candidate._id, { status: "expired" });
+        return res.status(400).json({ error: "This voucher has expired." });
+      }
+
+      appliedVoucher = await CustomerVoucher.findOneAndUpdate(
+        {
+          _id: voucherId,
+          customerId: String(customerId),
+          status: "assigned",
+          issueDate: { $lte: today },
+          expiryDate: { $gte: today },
+        },
+        {
+          $set: {
+            status: "redeemed",
+            redeemedAt: new Date(),
+          },
+        },
+        { new: true }
+      );
+      if (!appliedVoucher) {
+        return res.status(409).json({ error: "This voucher was just used or is no longer available." });
+      }
+      voucherReserved = true;
+      voucherAmount = Math.min(Number(appliedVoucher.amount) || 0, serviceGross);
+    }
+
+    let computedSubtotal = Number(subtotal) || 0;
+    let computedTaxAmount = Number(taxAmount) || 0;
+    let computedFinalAmount = Number(finalAmount) || 0;
+    let safeDiscountAmount = Number(discountAmount) || 0;
+
+    // Keep the existing client-side calculation for ordinary bills. Voucher
+    // bills are recalculated here so the flat voucher amount cannot be forged.
+    if (appliedVoucher) {
+      const grossSubtotal = billItems.reduce(
+        (sum: number, item: any) => sum + Math.max(0, Number(item.price) || 0) * Math.max(1, Number(item.quantity) || 1),
+        0
+      );
+      const itemDiscountTotal = billItems.reduce((sum: number, item: any) => sum + Math.max(0, Number(item.discount) || 0), 0);
+      safeDiscountAmount = Math.min(Math.max(0, Number(discountAmount) || 0), Math.max(0, grossSubtotal - itemDiscountTotal));
+      computedSubtotal = Math.max(0, grossSubtotal - itemDiscountTotal);
+      const computedTaxBase = Math.max(0, computedSubtotal - safeDiscountAmount - voucherAmount);
+      computedTaxAmount = (computedTaxBase * Math.max(0, Number(taxPercent) || 0)) / 100;
+      computedFinalAmount = Math.round(computedTaxBase + computedTaxAmount);
+    }
+
+    const bill = await Bill.create({
+      billNumber,
+      customerId: customerId || undefined,
+      customerName: customerName || "Walk-in",
+      customerPhone: customerPhone || "",
+      items: billItems,
+      subtotal: computedSubtotal,
+      taxPercent: Math.max(0, Number(taxPercent) || 0),
+      taxAmount: computedTaxAmount,
+      discountAmount: safeDiscountAmount,
+      voucherId: appliedVoucher?._id?.toString(),
+      voucherCode: appliedVoucher?.voucherCode,
+      voucherAmount,
+      finalAmount: computedFinalAmount,
+      paymentMethod,
+      status: status || "paid",
+      notes: notes || "",
     });
-  }
 
-  res.status(201).json({ ...bill.toObject(), id: bill._id.toString(), billNumber });
+    if (appliedVoucher) {
+      await CustomerVoucher.findByIdAndUpdate(appliedVoucher._id, {
+        redeemedBillId: bill._id.toString(),
+      });
+    }
+
+    // Update customer totalSpend and totalVisits if linked
+    if (customerId) {
+      await Customer.findByIdAndUpdate(customerId, {
+        $inc: { totalSpend: computedFinalAmount, totalVisits: 1 },
+      });
+    }
+
+    res.status(201).json({ ...bill.toObject(), id: bill._id.toString(), billNumber });
+  } catch (error: any) {
+    if (voucherReserved && appliedVoucher) {
+      await CustomerVoucher.findOneAndUpdate(
+        { _id: appliedVoucher._id, status: "redeemed", redeemedBillId: { $exists: false } },
+        { $set: { status: "assigned" }, $unset: { redeemedAt: 1 } }
+      ).catch(() => {});
+    }
+    res.status(500).json({ error: error?.message || "Failed to create bill" });
+  }
 });
 
 export default router;

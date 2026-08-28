@@ -3,7 +3,7 @@ import { useListServices, useListProducts, useListCustomers, useListStaff, useCr
 import {
   Search, Trash2, Receipt, CreditCard, Banknote, Smartphone,
   ChevronLeft, Wallet, UserPlus, X, Scissors, Package, Clock,
-  ChevronDown, UserCircle2, Tag, Check, BadgeCheck, Users, Plus, Crown, TrendingUp
+  ChevronDown, UserCircle2, Tag, Check, BadgeCheck, Users, Plus, Crown, TrendingUp, Ticket
 } from "lucide-react";
 import { Link, useSearch, useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -177,6 +177,9 @@ export default function POS() {
   const [addPhoneError, setAddPhoneError] = useState("");
   const [addLoading, setAddLoading]       = useState(false);
   const [membershipPlans, setMembershipPlans] = useState<any[]>([]);
+  const [customerVouchers, setCustomerVouchers] = useState<any[]>([]);
+  const [selectedVoucher, setSelectedVoucher] = useState<any | null>(null);
+  const [vouchersLoading, setVouchersLoading] = useState(false);
   const [typePicker, setTypePicker]       = useState<any | null>(null);
   const [isEditSubmitting, setIsEditSubmitting] = useState(false);
   const isEditLoading = useRef(false);
@@ -238,6 +241,28 @@ export default function POS() {
     return { autoDiscountPct: 0, specialLabel: null, membershipLabel: null };
   }, [customerDob, customerAnniversary, customerMembership, cartMembershipDiscount, todayMMDD]);
 
+  // A voucher replaces every other offer on the bill. It discounts service
+  // value only, while products remain at their normal price.
+  const effectiveAutoDiscountPct = selectedVoucher ? 0 : autoDiscountPct;
+  const serviceGrossSubtotal = useMemo(
+    () => cart
+      .filter((item) => item.type === "service")
+      .reduce((sum, item) => sum + item.price * item.quantity, 0),
+    [cart]
+  );
+  const voucherHasOtherDiscount = Boolean(selectedVoucher) && (
+    globalDiscountAmt > 0 || cart.some((item) => item.discountAmt > 0)
+  );
+  const voucherError = selectedVoucher
+    ? cart.some((item) => item.type === "membership")
+      ? "Remove the membership purchase before using a voucher."
+      : serviceGrossSubtotal < 1000
+      ? "Add at least ₹1,000 in salon services to use this voucher."
+      : voucherHasOtherDiscount
+      ? "This voucher cannot be clubbed with another offer or discount."
+      : ""
+    : "";
+
   // Keep editBillIdRef in sync so handleGenerateBill always sees the latest value
   useEffect(() => { editBillIdRef.current = editBillId; }, [editBillId]);
 
@@ -247,9 +272,9 @@ export default function POS() {
     if (isEditLoading.current) return;
     setCart(prev => prev.map(item => {
       if (item.type !== "service") return item;
-      return { ...item, discountAmt: Math.round(item.price * autoDiscountPct / 100) };
+      return { ...item, discountAmt: Math.round(item.price * effectiveAutoDiscountPct / 100) };
     }));
-  }, [autoDiscountPct]);
+  }, [effectiveAutoDiscountPct]);
 
   useEffect(() => {
     const h = (e: MouseEvent) => {
@@ -367,7 +392,7 @@ export default function POS() {
     const id    = item.id || item._id;
     const price = overridePrice ?? (Number(activeTab === "services" ? item.price : activeTab === "products" ? item.sellingPrice : item.price) || 0);
     const name  = overrideName ?? item.name;
-    const discountAmt = activeTab === "services" ? Math.round(price * autoDiscountPct / 100) : 0;
+    const discountAmt = activeTab === "services" ? Math.round(price * effectiveAutoDiscountPct / 100) : 0;
     const type = activeTab === "services" ? "service" : activeTab === "products" ? "product" : "membership";
     let autoStaffId: string | null = null;
     let autoStaffName = "";
@@ -429,8 +454,9 @@ export default function POS() {
 
   const subtotal             = cart.reduce((a, i) => a + getItemTotal(i), 0);
   const totalItemDiscount    = cart.reduce((a, i) => a + (i.discountAmt || 0), 0);
-  const globalDiscountAmount = Math.min(globalDiscountAmt, subtotal);
-  const afterDiscount        = Math.max(0, subtotal - globalDiscountAmount);
+  const globalDiscountAmount = selectedVoucher ? 0 : Math.min(globalDiscountAmt, subtotal);
+  const voucherDiscountAmount = selectedVoucher ? Math.min(Number(selectedVoucher.amount) || 0, serviceGrossSubtotal) : 0;
+  const afterDiscount        = Math.max(0, subtotal - globalDiscountAmount - voucherDiscountAmount);
   const taxAmount            = (afterDiscount * taxPercent) / 100;
   const finalAmount          = Math.round(afterDiscount + taxAmount);
 
@@ -442,6 +468,25 @@ export default function POS() {
     } catch { setCustomerMembership(null); }
   };
 
+  const fetchCustomerVouchers = async (cid: string) => {
+    setVouchersLoading(true);
+    try {
+      const r = await fetch(`${API_BASE}/customer-vouchers/customer/${cid}`);
+      const d = await r.json();
+      setCustomerVouchers((d.vouchers || []).filter((voucher: any) => voucher.available));
+    } catch {
+      setCustomerVouchers([]);
+    } finally {
+      setVouchersLoading(false);
+    }
+  };
+
+  const chooseVoucher = (voucher: any) => {
+    setSelectedVoucher(voucher);
+    setGlobalDiscountAmt(0);
+    setCart((prev) => prev.map((item) => ({ ...item, discountAmt: 0 })));
+  };
+
   const selectCustomer = (c: any) => {
     const cid = c.id || c._id;
     setCustomerId(cid);
@@ -450,8 +495,11 @@ export default function POS() {
     setCustomerDob(c.dob || "");
     setCustomerAnniversary(c.anniversary || "");
     setSelectedMemberParentName(c._isFamily ? c._parentName : "");
+    setSelectedVoucher(null);
+    setCustomerVouchers([]);
     if (c.activeMembership !== undefined) setCustomerMembership(c.activeMembership || null);
     else fetchMembership(cid);
+    fetchCustomerVouchers(cid);
     setShowCustomerDropdown(false); setCustomerSearch("");
   };
 
@@ -459,6 +507,7 @@ export default function POS() {
     setCustomerId(""); setCustomerName("Walk-in Customer"); setCustomerPhone("");
     setCustomerDob(""); setCustomerAnniversary(""); setSelectedMemberParentName("");
     setShowCustomerDropdown(false); setCustomerSearch(""); setCustomerMembership(null);
+    setCustomerVouchers([]); setSelectedVoucher(null);
   };
 
   const resetAddForm = () => {
@@ -533,6 +582,7 @@ export default function POS() {
 
   const handleGenerateBill = async () => {
     if (cart.length === 0) { toast({ title: "Cart is empty", description: "Add at least one item.", variant: "destructive" }); return; }
+    if (voucherError) { toast({ title: "Voucher cannot be applied", description: voucherError, variant: "destructive" }); return; }
 
     const currentEditBillId = editBillIdRef.current;
 
@@ -540,7 +590,12 @@ export default function POS() {
       customerId: customerId || null, customerName: customerName || "Walk-in Customer", customerPhone: customerPhone || "",
       items: cart.map(i => ({ type: i.type, itemId: i.itemId, name: i.name, staffId: i.staffId || null, staffName: i.staffName || null, price: i.price, quantity: i.quantity, discount: i.discountAmt, total: getItemTotal(i), durationMonths: i.durationMonths, isUpgradation: i.isUpgradation || false })),
       subtotal, taxPercent, taxAmount, paymentMethod, discountAmount: globalDiscountAmount, finalAmount, status: "paid",
-      notes: [specialLabel || membershipLabel, selectedMemberParentName ? `Family of ${selectedMemberParentName}` : ""].filter(Boolean).join(" · "),
+      voucherId: selectedVoucher?.id || selectedVoucher?._id || null,
+      voucherAmount: voucherDiscountAmount,
+      notes: [
+        selectedVoucher ? `🎁 ${selectedVoucher.voucherCode} — ₹${voucherDiscountAmount} voucher` : (specialLabel || membershipLabel),
+        selectedMemberParentName ? `Family of ${selectedMemberParentName}` : "",
+      ].filter(Boolean).join(" · "),
     };
 
     const assignMembershipsForCustomer = async (cid: string) => {
@@ -582,6 +637,7 @@ export default function POS() {
         toast({ title: "✓ Invoice Updated!", description: `Bill updated successfully — ₹${finalAmount.toLocaleString("en-IN")}` });
         setCart([]); setCustomerId(""); setCustomerName("Walk-in Customer"); setCustomerPhone("");
         setCustomerDob(""); setCustomerAnniversary(""); setGlobalDiscountAmt(0); setCustomerMembership(null);
+        setCustomerVouchers([]); setSelectedVoucher(null);
         setPosFamilyToAdd([]); setShowPosFamilySection(false);
         navigate("/invoices");
       } catch (err: any) {
@@ -609,9 +665,10 @@ export default function POS() {
           toast({ title: "✓ Bill Generated!", description: `${(bill as any).billNumber} — ₹${finalAmount.toLocaleString("en-IN")}` });
           setCart([]); setCustomerId(""); setCustomerName("Walk-in Customer"); setCustomerPhone("");
           setCustomerDob(""); setCustomerAnniversary(""); setGlobalDiscountAmt(0); setCustomerMembership(null);
+          setCustomerVouchers([]); setSelectedVoucher(null);
           setPosFamilyToAdd([]); setShowPosFamilySection(false);
         },
-        onError: () => toast({ title: "Failed to generate bill", variant: "destructive" }),
+        onError: (error: any) => toast({ title: "Failed to generate bill", description: error?.message || "Please check the voucher rules and try again.", variant: "destructive" }),
       });
     }
   };
@@ -802,14 +859,19 @@ export default function POS() {
           <p className="text-[10px] uppercase tracking-widest font-bold mb-2 text-white">Customer</p>
 
           {/* Special day discount banner */}
-          {specialLabel && (
+          {selectedVoucher ? (
+            <div className="mb-2 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500/25 border border-amber-300/30">
+              <Ticket className="w-3.5 h-3.5 shrink-0 text-amber-200" />
+              <span className="text-xs font-semibold text-white">Voucher applied · ₹{Number(selectedVoucher.amount).toLocaleString("en-IN")} off services</span>
+            </div>
+          ) : specialLabel && (
             <div className="mb-2 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-500/25 border border-rose-400/30">
               <span className="text-xs font-semibold text-white">{specialLabel}</span>
             </div>
           )}
 
           {/* Membership badge (only when no special day override) */}
-          {!specialLabel && customerMembership && (
+          {!selectedVoucher && !specialLabel && customerMembership && (
             <div className="mb-2 flex items-center gap-1.5 px-3 py-2 rounded-xl bg-sidebar-accent">
               <BadgeCheck className="w-3.5 h-3.5 shrink-0 text-sidebar-primary" />
               <span className="text-xs font-semibold text-white">{customerMembership.membershipName}</span>
@@ -900,6 +962,56 @@ export default function POS() {
           </div>
         </div>
 
+        {/* Customer vouchers */}
+        {customerId && (
+          <div className="mx-3 mt-2 rounded-2xl bg-sidebar-accent overflow-hidden">
+            <div className="px-3 py-2.5 flex items-center justify-between border-b border-sidebar-border/50">
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-white">
+                <Ticket className="w-3.5 h-3.5 text-amber-300" /> Gift Vouchers
+              </span>
+              {selectedVoucher && (
+                <button onClick={() => setSelectedVoucher(null)} className="text-[10px] text-white/60 hover:text-white">
+                  Remove
+                </button>
+              )}
+            </div>
+            <div className="p-2">
+              {vouchersLoading ? (
+                <p className="text-[10px] text-white/50 px-1 py-1">Loading vouchers...</p>
+              ) : customerVouchers.length === 0 ? (
+                <p className="text-[10px] text-white/50 px-1 py-1">No available vouchers for this customer.</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {customerVouchers.map((voucher) => {
+                    const isSelected = selectedVoucher?.id === voucher.id;
+                    return (
+                      <button
+                        key={voucher.id || voucher._id}
+                        onClick={() => isSelected ? setSelectedVoucher(null) : chooseVoucher(voucher)}
+                        className={`w-full text-left rounded-xl p-2 flex items-center gap-2 transition-colors ${
+                          isSelected ? "bg-amber-400/20 ring-1 ring-amber-300/60" : "bg-sidebar hover:bg-sidebar/70"
+                        }`}
+                      >
+                        <img src={voucher.frontImage} alt="" className="w-14 h-7 object-cover rounded border border-white/10" />
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-[11px] font-bold text-white">₹{Number(voucher.amount).toLocaleString("en-IN")} Gift Voucher</span>
+                          <span className="block text-[9px] text-white/50 truncate">{voucher.voucherCode} · valid till {voucher.expiryDate}</span>
+                        </span>
+                        {isSelected && <Check className="w-3.5 h-3.5 text-amber-300 shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {selectedVoucher && (
+                <p className="text-[9px] text-amber-200/80 mt-2 px-1">
+                  Replaces other offers · services only · minimum service bill ₹1,000
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Cart items */}
         <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
           {cart.length === 0 ? (
@@ -969,12 +1081,13 @@ export default function POS() {
                       <span className="px-1.5 text-[10px] font-medium border-r h-full flex items-center py-1.5 text-white border-sidebar-border">₹</span>
                       <input type="text" inputMode="numeric" placeholder="0"
                         value={item.discountAmt === 0 ? "" : item.discountAmt}
+                        disabled={Boolean(selectedVoucher)}
                         onChange={e => {
                           const digits = e.target.value.replace(/\D/g, "");
                           const base = item.price * item.quantity;
                           updateCartItem(item.uid, "discountAmt", Math.min(base, Number(digits) || 0));
                         }}
-                        className={`w-12 text-xs bg-transparent px-1.5 py-1.5 focus:outline-none text-center font-semibold text-white ${noSpinner}`}
+                        className={`w-12 text-xs bg-transparent px-1.5 py-1.5 focus:outline-none text-center font-semibold text-white disabled:opacity-40 ${noSpinner}`}
                       />
                     </div>
                     <button onClick={() => removeCartItem(item.uid)}
@@ -1079,6 +1192,14 @@ export default function POS() {
                 <span className="font-semibold text-white">₹{subtotal.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</span>
               </div>
             )}
+            {selectedVoucher && (
+              <div className="flex justify-between text-sm items-center">
+                <span className="text-amber-300 font-semibold flex items-center gap-1.5">
+                  <Ticket className="w-3.5 h-3.5" /> Voucher · {selectedVoucher.voucherCode}
+                </span>
+                <span className="font-bold text-amber-300">−₹{voucherDiscountAmount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</span>
+              </div>
+            )}
             <div className="flex items-center gap-2">
               <span className="text-sm flex items-center gap-1 shrink-0 text-white">
                 <Tag className="w-3.5 h-3.5" /> Extra Discount
@@ -1086,17 +1207,21 @@ export default function POS() {
               <div className="flex items-center ml-auto rounded-lg overflow-hidden bg-sidebar-accent">
                 <span className="text-[11px] px-1.5 flex items-center py-1.5 border-r text-white border-sidebar-border">₹</span>
                 <input type="text" inputMode="numeric" value={globalDiscountAmt === 0 ? "" : globalDiscountAmt}
+                  disabled={Boolean(selectedVoucher)}
                   onChange={e => {
                     const digits = e.target.value.replace(/\D/g, "");
                     setGlobalDiscountAmt(Math.min(subtotal, Number(digits) || 0));
                   }} placeholder="0"
-                  className={`w-16 text-xs text-center px-1.5 py-1 focus:outline-none bg-transparent font-semibold text-white ${noSpinner}`}
+                  className={`w-16 text-xs text-center px-1.5 py-1 focus:outline-none bg-transparent font-semibold text-white disabled:opacity-40 ${noSpinner}`}
                 />
               </div>
               <span className="text-sm font-medium min-w-[3rem] text-right text-white">
                 {globalDiscountAmount > 0 ? `−₹${globalDiscountAmount.toLocaleString("en-IN", { maximumFractionDigits: 0 })}` : "—"}
               </span>
             </div>
+            {voucherError && (
+              <p className="text-[10px] leading-relaxed text-red-300 bg-red-500/10 rounded-lg px-2.5 py-2">{voucherError}</p>
+            )}
             <div className="flex justify-between items-center text-sm">
               <button onClick={() => setTaxEnabled(t => !t)} className="flex items-center gap-2 transition-colors text-white">
                 <div className="w-8 h-4 rounded-full relative transition-colors"
@@ -1147,7 +1272,7 @@ export default function POS() {
 
           <div className="px-4 pb-5">
             {(() => {
-              const isDisabled = cart.length === 0 || createBill.isPending || isEditSubmitting;
+              const isDisabled = cart.length === 0 || Boolean(voucherError) || createBill.isPending || isEditSubmitting;
               const isActive = !isDisabled;
               return (
                 <button onClick={handleGenerateBill} disabled={isDisabled}
@@ -1182,9 +1307,9 @@ export default function POS() {
               </button>
             </div>
             <div className="p-4 space-y-2">
-              {autoDiscountPct > 0 && (
+              {effectiveAutoDiscountPct > 0 && (
                 <p className="text-[11px] text-center text-white/60 pb-1">
-                  {autoDiscountPct}% discount will be applied automatically
+                  {effectiveAutoDiscountPct}% discount will be applied automatically
                 </p>
               )}
               {(Array.isArray(typePicker.types) ? typePicker.types.filter((v: any) => v.name) : []).map((v: any) => {
@@ -1209,9 +1334,9 @@ export default function POS() {
                     </div>
                     <div className="text-right">
                       <span className={`font-bold text-sm ${alreadySelected ? "text-white/40" : "text-white"}`}>₹{(Number(v.price) || 0).toLocaleString("en-IN")}</span>
-                      {autoDiscountPct > 0 && !alreadySelected && (
+                      {effectiveAutoDiscountPct > 0 && !alreadySelected && (
                         <span className="block text-[10px] text-emerald-400">
-                          after disc: ₹{Math.round((Number(v.price) || 0) * (1 - autoDiscountPct / 100)).toLocaleString("en-IN")}
+                          after disc: ₹{Math.round((Number(v.price) || 0) * (1 - effectiveAutoDiscountPct / 100)).toLocaleString("en-IN")}
                         </span>
                       )}
                     </div>

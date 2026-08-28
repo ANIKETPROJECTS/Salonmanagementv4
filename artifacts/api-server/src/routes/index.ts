@@ -10,6 +10,7 @@ import membershipsRouter from "./memberships.js";
 import dashboardRouter from "./dashboard.js";
 import reportsRouter from "./reports.js";
 import upgradationRouter from "./upgradation.js";
+import vouchersRouter from "./vouchers.js";
 
 const router: IRouter = Router();
 
@@ -23,6 +24,7 @@ router.use(appointmentsRouter);
 router.use(upgradationRouter);
 router.use(billsRouter);
 router.use(membershipsRouter);
+router.use(vouchersRouter);
 router.use(dashboardRouter);
 router.use(reportsRouter);
 

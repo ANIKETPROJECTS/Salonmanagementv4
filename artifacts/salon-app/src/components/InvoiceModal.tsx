@@ -37,6 +37,9 @@ interface Bill {
   taxPercent: number;
   taxAmount: number;
   discountAmount: number;
+  voucherId?: string;
+  voucherCode?: string;
+  voucherAmount?: number;
   finalAmount: number;
   paymentMethod: string;
   status: string;
@@ -253,6 +256,12 @@ export function InvoiceModal({ bill, onClose }: InvoiceModalProps) {
                 <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 13, color: "#111", fontFamily: f }}>
                   <span>Extra Discount</span>
                   <span>− ₹{Number(bill.discountAmount).toLocaleString("en-IN")}</span>
+                </div>
+              )}
+              {Number(bill.voucherAmount || 0) > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 13, color: "#b85c00", fontWeight: 600, fontFamily: f }}>
+                  <span>Gift Voucher {bill.voucherCode ? `(${bill.voucherCode})` : ""}</span>
+                  <span>− ₹{Number(bill.voucherAmount).toLocaleString("en-IN")}</span>
                 </div>
               )}
               {bill.taxAmount > 0 && (

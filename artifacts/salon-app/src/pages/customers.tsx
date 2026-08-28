@@ -1,6 +1,6 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useListCustomers, useListMemberships } from "@workspace/api-client-react";
-import { Search, Plus, User, Phone, Calendar, Eye, Pencil, Trash2, X, Scissors, Package, FileText, BadgeCheck, Users, ChevronDown, ChevronUp, Crown } from "lucide-react";
+import { Search, Plus, User, Phone, Calendar, Eye, Pencil, Trash2, X, Scissors, Package, FileText, BadgeCheck, Users, ChevronDown, ChevronUp, Crown, Ticket, Gift } from "lucide-react";
 import { format, addMonths, subDays, parseISO } from "date-fns";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -59,6 +59,27 @@ export default function Customers() {
   const { toast } = useToast();
 
   const membershipPlans: any[] = (membershipData as any)?.memberships || [];
+  const [voucherTemplates, setVoucherTemplates] = useState<any[]>([]);
+  const [voucherTerms, setVoucherTerms] = useState<string[]>([]);
+  const [showAssignVoucher, setShowAssignVoucher] = useState(false);
+  const [voucherForm, setVoucherForm] = useState({
+    customerId: "",
+    templateId: "",
+    issueDate: format(new Date(), "yyyy-MM-dd"),
+  });
+  const [voucherSaving, setVoucherSaving] = useState(false);
+  const [customerVouchers, setCustomerVouchers] = useState<any[]>([]);
+  const [customerVouchersLoading, setCustomerVouchersLoading] = useState(false);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/customer-vouchers/templates`)
+      .then((res) => res.json())
+      .then((body) => {
+        setVoucherTemplates(body.templates || []);
+        setVoucherTerms(body.terms || []);
+      })
+      .catch(() => {});
+  }, []);
 
   type FieldErrors = { name?: string; phone?: string; members?: Record<number, { name?: string; phone?: string }> };
 
@@ -97,6 +118,19 @@ export default function Customers() {
   const [deleteSubMemberLoading, setDeleteSubMemberLoading] = useState(false);
 
   const allCustomers: any[] = data?.customers || [];
+
+  const assignableCustomers = useMemo(() => {
+    const result: any[] = [];
+    for (const customer of allCustomers) {
+      result.push(customer);
+      for (const member of Array.isArray(customer.familyMembers) ? customer.familyMembers : []) {
+        if (member.name && (member.id || member._id)) {
+          result.push({ ...member, _parentName: customer.name });
+        }
+      }
+    }
+    return result;
+  }, [allCustomers]);
 
   const filteredSorted = useMemo(() => {
     let list = [...allCustomers];
@@ -250,14 +284,64 @@ export default function Customers() {
   const openView = async (customerId: string) => {
     setViewCustomerId(customerId);
     setCustomerDetail(null);
+    setCustomerVouchers([]);
     setDetailLoading(true);
+    setCustomerVouchersLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/customers/${customerId}`);
-      const d = await res.json();
+      const [customerRes, voucherRes] = await Promise.all([
+        fetch(`${API_BASE}/customers/${customerId}`),
+        fetch(`${API_BASE}/customer-vouchers/customer/${customerId}`),
+      ]);
+      const d = await customerRes.json();
+      const voucherData = await voucherRes.json();
       setCustomerDetail(d);
+      setCustomerVouchers(voucherData.vouchers || []);
     } catch {
       toast({ title: "Error", description: "Failed to load customer details.", variant: "destructive" });
-    } finally { setDetailLoading(false); }
+    } finally {
+      setDetailLoading(false);
+      setCustomerVouchersLoading(false);
+    }
+  };
+
+  const resetVoucherForm = () => {
+    setVoucherForm({
+      customerId: "",
+      templateId: "",
+      issueDate: format(new Date(), "yyyy-MM-dd"),
+    });
+  };
+
+  const handleAssignVoucher = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!voucherForm.customerId || !voucherForm.templateId || !voucherForm.issueDate) {
+      toast({ title: "Missing voucher details", description: "Choose a customer, voucher, and issue date.", variant: "destructive" });
+      return;
+    }
+
+    setVoucherSaving(true);
+    try {
+      const res = await fetch(`${API_BASE}/customer-vouchers`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(voucherForm),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Failed to assign voucher.");
+
+      const assignedCustomer = assignableCustomers.find((c) => (c.id || c._id) === voucherForm.customerId);
+      toast({
+        title: "Voucher Assigned",
+        description: `${body.amount ? `₹${body.amount}` : "Gift"} voucher assigned to ${assignedCustomer?.name || "customer"}.`,
+      });
+      setShowAssignVoucher(false);
+      resetVoucherForm();
+      refetch();
+    } catch (error: any) {
+      toast({ title: "Could not assign voucher", description: error.message, variant: "destructive" });
+    } finally {
+      setVoucherSaving(false);
+    }
   };
 
   const openEdit = (c: any) => {
@@ -427,10 +511,16 @@ export default function Customers() {
           <h1 className="text-3xl font-serif font-bold text-primary">Customers</h1>
           <p className="text-muted-foreground mt-1">Manage your clients and their history.</p>
         </div>
-        <button onClick={() => setShowAdd(true)}
-          className="bg-secondary text-white px-6 py-3 rounded-xl font-semibold hover:bg-secondary/90 transition-colors shadow-lg shadow-secondary/20 flex items-center gap-2">
-          <Plus className="w-5 h-5" /> Add Customer
-        </button>
+        <div className="flex items-center gap-3">
+          <button onClick={() => { resetVoucherForm(); setShowAssignVoucher(true); }}
+            className="border border-secondary/40 text-secondary px-5 py-3 rounded-xl font-semibold hover:bg-secondary/10 transition-colors flex items-center gap-2">
+            <Ticket className="w-5 h-5" /> Assign Voucher
+          </button>
+          <button onClick={() => setShowAdd(true)}
+            className="bg-secondary text-white px-6 py-3 rounded-xl font-semibold hover:bg-secondary/90 transition-colors shadow-lg shadow-secondary/20 flex items-center gap-2">
+            <Plus className="w-5 h-5" /> Add Customer
+          </button>
+        </div>
       </div>
 
       <div className="bg-card rounded-2xl shadow-lg border border-border/50 overflow-hidden">
@@ -673,6 +763,110 @@ export default function Customers() {
           </div>
         )}
       </div>
+
+      {/* ── Assign Voucher Modal ── */}
+      {showAssignVoucher && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-card rounded-3xl w-full max-w-3xl shadow-2xl max-h-[92vh] flex flex-col">
+            <div className="p-6 border-b border-border/50 flex items-center justify-between shrink-0">
+              <div>
+                <h2 className="text-2xl font-serif font-bold text-primary flex items-center gap-2">
+                  <Gift className="w-6 h-6 text-secondary" /> Assign Gift Voucher
+                </h2>
+                <p className="text-sm text-muted-foreground mt-1">Choose a voucher and issue it to a customer.</p>
+              </div>
+              <button onClick={() => { setShowAssignVoucher(false); resetVoucherForm(); }} className="p-2 rounded-lg hover:bg-muted transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAssignVoucher} className="overflow-y-auto flex-1 p-6 space-y-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold mb-1.5 text-muted-foreground">Customer *</label>
+                  <select
+                    value={voucherForm.customerId}
+                    onChange={(e) => setVoucherForm((prev) => ({ ...prev, customerId: e.target.value }))}
+                    className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    required
+                  >
+                    <option value="">Choose a customer</option>
+                    {assignableCustomers.map((customer) => (
+                      <option key={customer.id || customer._id} value={customer.id || customer._id}>
+                        {customer.name}{customer._parentName ? ` (Family of ${customer._parentName})` : ""} · {customer.phone || "No phone"}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold mb-1.5 text-muted-foreground">Voucher issued on *</label>
+                  <input
+                    type="date"
+                    value={voucherForm.issueDate}
+                    onChange={(e) => setVoucherForm((prev) => ({ ...prev, issueDate: e.target.value }))}
+                    className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    required
+                  />
+                  <p className="text-xs text-muted-foreground mt-1.5">
+                    Expires on {voucherForm.issueDate ? format(addMonths(parseISO(voucherForm.issueDate), 1), "dd MMM yyyy") : "—"}.
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold mb-2 text-muted-foreground">Choose voucher *</label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {voucherTemplates.map((template) => (
+                    <button
+                      key={template.id}
+                      type="button"
+                      onClick={() => setVoucherForm((prev) => ({ ...prev, templateId: template.id }))}
+                      className={`text-left rounded-2xl overflow-hidden border-2 transition-all ${
+                        voucherForm.templateId === template.id
+                          ? "border-secondary ring-2 ring-secondary/20 shadow-lg"
+                          : "border-border hover:border-secondary/50"
+                      }`}
+                    >
+                      <img src={template.frontImage} alt={`${template.name} artwork`} className="w-full aspect-[2.75/1] object-cover" />
+                      <div className="px-4 py-3 flex items-center justify-between bg-muted/20">
+                        <span className="font-bold text-primary">{template.name}</span>
+                        <span className="text-xs font-semibold text-muted-foreground">
+                          {voucherForm.templateId === template.id ? "Selected" : "Select"}
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                {voucherTemplates.length === 0 && (
+                  <p className="text-sm text-muted-foreground bg-muted/20 rounded-xl p-4">Loading voucher templates...</p>
+                )}
+              </div>
+
+              <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <Ticket className="w-4 h-4 text-secondary" />
+                  <p className="text-sm font-bold text-primary">Voucher terms</p>
+                </div>
+                <ul className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1.5 text-xs text-muted-foreground list-disc pl-5">
+                  {voucherTerms.map((term) => <li key={term}>{term}</li>)}
+                </ul>
+                <img src="/vouchers/voucher-terms.png" alt="Voucher offer details" className="w-full rounded-xl mt-4 border border-border/50" />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-1">
+                <button type="button" onClick={() => { setShowAssignVoucher(false); resetVoucherForm(); }}
+                  className="px-5 py-2.5 rounded-xl border border-border text-sm font-semibold hover:bg-muted transition-colors">
+                  Cancel
+                </button>
+                <button type="submit" disabled={voucherSaving || !voucherTemplates.length}
+                  className="px-6 py-2.5 rounded-xl bg-secondary text-white text-sm font-semibold hover:bg-secondary/90 transition-colors disabled:opacity-50">
+                  {voucherSaving ? "Assigning..." : "Assign Voucher"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* ── Add Customer Modal ── */}
       {showAdd && (
@@ -1285,6 +1479,55 @@ export default function Customers() {
                       </p>
                       <p className="text-xs text-muted-foreground mt-1">Last Visit</p>
                     </div>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="font-semibold text-sm uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                        <Ticket className="w-4 h-4 text-secondary" /> Gift Vouchers
+                      </h4>
+                      <button
+                        onClick={() => {
+                          resetVoucherForm();
+                          setVoucherForm((prev) => ({ ...prev, customerId: customerDetail.id || customerDetail._id }));
+                          setShowAssignVoucher(true);
+                        }}
+                        className="text-xs font-semibold text-secondary hover:underline"
+                      >
+                        Assign another
+                      </button>
+                    </div>
+                    {customerVouchersLoading ? (
+                      <div className="text-sm text-muted-foreground bg-muted/20 rounded-xl p-4">Loading vouchers...</div>
+                    ) : customerVouchers.length === 0 ? (
+                      <div className="text-sm text-muted-foreground bg-muted/20 rounded-xl p-4">No gift vouchers assigned.</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {customerVouchers.map((voucher) => {
+                          const statusColor = voucher.status === "redeemed"
+                            ? "bg-slate-100 text-slate-600"
+                            : voucher.status === "expired"
+                            ? "bg-red-100 text-red-600"
+                            : voucher.available
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-amber-100 text-amber-700";
+                          return (
+                            <div key={voucher.id || voucher._id} className="rounded-xl border border-border/50 bg-muted/10 p-3 flex items-center gap-3">
+                              <img src={voucher.frontImage} alt="" className="w-24 h-10 object-cover rounded-lg border border-border/40" />
+                              <div className="min-w-0 flex-1">
+                                <p className="font-semibold text-sm text-foreground">{voucher.voucherCode} · ₹{Number(voucher.amount).toLocaleString("en-IN")}</p>
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                  Issued {voucher.issueDate ? format(new Date(voucher.issueDate), "dd MMM yyyy") : "—"} · Expires {voucher.expiryDate ? format(new Date(voucher.expiryDate), "dd MMM yyyy") : "—"}
+                                </p>
+                              </div>
+                              <span className={`shrink-0 px-2 py-1 rounded-full text-[10px] font-bold uppercase ${statusColor}`}>
+                                {voucher.status === "assigned" && !voucher.available ? "Not active" : voucher.status}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
 
                   <div>

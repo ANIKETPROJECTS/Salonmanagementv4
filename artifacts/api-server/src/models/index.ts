@@ -244,6 +244,9 @@ export interface IBill extends Document {
   taxPercent: number;
   taxAmount: number;
   discountAmount: number;
+  voucherId?: string;
+  voucherCode?: string;
+  voucherAmount?: number;
   finalAmount: number;
   paymentMethod: string;
   status: string;
@@ -278,6 +281,9 @@ const BillSchema = new Schema<IBill>(
     taxPercent: { type: Number, default: 0 },
     taxAmount: { type: Number, default: 0 },
     discountAmount: { type: Number, default: 0 },
+    voucherId: String,
+    voucherCode: String,
+    voucherAmount: { type: Number, default: 0 },
     finalAmount: { type: Number, required: true },
     paymentMethod: { type: String, default: "cash" },
     status: { type: String, default: "paid" },
@@ -367,3 +373,40 @@ const CustomerMembershipSchema = new Schema<ICustomerMembership>(
 export const CustomerMembership =
   mongoose.models.CustomerMembership ||
   mongoose.model<ICustomerMembership>("CustomerMembership", CustomerMembershipSchema);
+
+// ── Customer Voucher ────────────────────────────────────────
+export type CustomerVoucherStatus = "assigned" | "redeemed" | "expired";
+
+export interface ICustomerVoucher extends Document {
+  voucherCode: string;
+  templateId: string;
+  amount: number;
+  customerId: string;
+  customerName: string;
+  issueDate: string;
+  expiryDate: string;
+  status: CustomerVoucherStatus;
+  redeemedBillId?: string;
+  redeemedAt?: Date;
+  createdAt: Date;
+}
+
+const CustomerVoucherSchema = new Schema<ICustomerVoucher>(
+  {
+    voucherCode: { type: String, required: true, unique: true },
+    templateId: { type: String, required: true },
+    amount: { type: Number, required: true },
+    customerId: { type: String, required: true, index: true },
+    customerName: { type: String, required: true },
+    issueDate: { type: String, required: true },
+    expiryDate: { type: String, required: true },
+    status: { type: String, enum: ["assigned", "redeemed", "expired"], default: "assigned", index: true },
+    redeemedBillId: String,
+    redeemedAt: Date,
+  },
+  { timestamps: true }
+);
+
+export const CustomerVoucher =
+  mongoose.models.CustomerVoucher ||
+  mongoose.model<ICustomerVoucher>("CustomerVoucher", CustomerVoucherSchema);
