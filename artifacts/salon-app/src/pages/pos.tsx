@@ -1319,22 +1319,17 @@ export default function POS() {
                 );
                 return (
                   <button key={v.name}
-                    disabled={alreadySelected}
                     onClick={() => { addToCart(typePicker, Number(v.price) || 0, variantName); setTypePicker(null); }}
-                    className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-colors ${
-                      alreadySelected
-                        ? "bg-sidebar/40 opacity-40 cursor-not-allowed"
-                        : "bg-sidebar hover:bg-sidebar/80"
-                    }`}>
+                    className="w-full flex items-center justify-between px-4 py-3 rounded-xl transition-colors bg-sidebar hover:bg-sidebar/80">
                     <div className="flex items-center gap-2">
-                      <span className={`text-sm font-semibold ${alreadySelected ? "text-white/50" : "text-white"}`}>{v.name}</span>
+                      <span className="text-sm font-semibold text-white">{v.name}</span>
                       {alreadySelected && (
-                        <span className="text-[10px] font-medium text-white/40 bg-white/10 px-2 py-0.5 rounded-full">Added</span>
+                        <span className="text-[10px] font-medium text-emerald-300 bg-emerald-400/10 px-2 py-0.5 rounded-full">Added · add another</span>
                       )}
                     </div>
                     <div className="text-right">
-                      <span className={`font-bold text-sm ${alreadySelected ? "text-white/40" : "text-white"}`}>₹{(Number(v.price) || 0).toLocaleString("en-IN")}</span>
-                      {effectiveAutoDiscountPct > 0 && !alreadySelected && (
+                      <span className="font-bold text-sm text-white">₹{(Number(v.price) || 0).toLocaleString("en-IN")}</span>
+                      {effectiveAutoDiscountPct > 0 && (
                         <span className="block text-[10px] text-emerald-400">
                           after disc: ₹{Math.round((Number(v.price) || 0) * (1 - effectiveAutoDiscountPct / 100)).toLocaleString("en-IN")}
                         </span>
