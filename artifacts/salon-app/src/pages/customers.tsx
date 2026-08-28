@@ -69,6 +69,10 @@ export default function Customers() {
   });
   const [voucherCustomerSearch, setVoucherCustomerSearch] = useState("");
   const [voucherSaving, setVoucherSaving] = useState(false);
+  const [assignedVouchers, setAssignedVouchers] = useState<any[]>([]);
+  const [assignedVouchersLoading, setAssignedVouchersLoading] = useState(false);
+  const [voucherLedgerSearch, setVoucherLedgerSearch] = useState("");
+  const [revokingVoucherId, setRevokingVoucherId] = useState<string | null>(null);
   const [customerVouchers, setCustomerVouchers] = useState<any[]>([]);
   const [customerVouchersLoading, setCustomerVouchersLoading] = useState(false);
 
@@ -142,6 +146,16 @@ export default function Customers() {
         .some((value) => String(value).toLowerCase().includes(query))
     );
   }, [assignableCustomers, voucherCustomerSearch]);
+
+  const filteredAssignedVouchers = useMemo(() => {
+    const query = voucherLedgerSearch.trim().toLowerCase();
+    if (!query) return assignedVouchers;
+    return assignedVouchers.filter((voucher) =>
+      [voucher.customerName, voucher.voucherCode, voucher.templateName, voucher.status]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(query))
+    );
+  }, [assignedVouchers, voucherLedgerSearch]);
 
   const filteredSorted = useMemo(() => {
     let list = [...allCustomers];
@@ -324,6 +338,21 @@ export default function Customers() {
     });
   };
 
+  const loadAssignedVouchers = async () => {
+    setAssignedVouchersLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/customer-vouchers`);
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || "Failed to load vouchers.");
+      setAssignedVouchers(body.vouchers || []);
+    } catch {
+      setAssignedVouchers([]);
+      toast({ title: "Could not load voucher assignments", variant: "destructive" });
+    } finally {
+      setAssignedVouchersLoading(false);
+    }
+  };
+
   const openAssignVoucherPage = (customerId = "") => {
     setSearch("");
     setPage(1);
@@ -333,7 +362,27 @@ export default function Customers() {
       templateId: "",
       issueDate: format(new Date(), "yyyy-MM-dd"),
     });
+    setVoucherLedgerSearch("");
+    loadAssignedVouchers();
     setShowAssignVoucher(true);
+  };
+
+  const handleRevokeVoucher = async (voucher: any) => {
+    const voucherId = voucher.id || voucher._id;
+    if (!voucherId || !window.confirm(`Revoke ${voucher.templateName || "this voucher"} assigned to ${voucher.customerName}?`)) return;
+
+    setRevokingVoucherId(voucherId);
+    try {
+      const res = await fetch(`${API_BASE}/customer-vouchers/${voucherId}/revoke`, { method: "POST" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Failed to revoke voucher.");
+      toast({ title: "Voucher Revoked", description: `${voucher.voucherCode} can no longer be redeemed.` });
+      await loadAssignedVouchers();
+    } catch (error: any) {
+      toast({ title: "Could not revoke voucher", description: error.message, variant: "destructive" });
+    } finally {
+      setRevokingVoucherId(null);
+    }
   };
 
   const handleAssignVoucher = async (e: React.FormEvent) => {
@@ -532,6 +581,11 @@ export default function Customers() {
     const selectedVoucherCustomer = assignableCustomers.find(
       (customer) => (customer.id || customer._id) === voucherForm.customerId
     );
+    const selectedCustomerActiveTemplates = new Set(
+      assignedVouchers
+        .filter((voucher) => voucher.customerId === voucherForm.customerId && voucher.available)
+        .map((voucher) => voucher.templateId)
+    );
 
     return (
       <div className="p-8 max-w-7xl mx-auto animate-in fade-in duration-500" style={{ fontFamily: "'Poppins', sans-serif" }}>
@@ -605,7 +659,13 @@ export default function Customers() {
                         <button
                           type="button"
                           key={customerId}
-                          onClick={() => setVoucherForm((prev) => ({ ...prev, customerId }))}
+                          onClick={() => setVoucherForm((prev) => ({
+                            ...prev,
+                            customerId,
+                            templateId: assignedVouchers.some(
+                              (voucher) => voucher.customerId === customerId && voucher.templateId === prev.templateId && voucher.available
+                            ) ? "" : prev.templateId,
+                          }))}
                           className={`w-full text-left px-4 py-3 flex items-center gap-3 transition-colors ${selected ? "bg-primary/10" : "hover:bg-muted/30"}`}
                         >
                           <div className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${selected ? "bg-primary text-white" : "bg-muted text-primary"}`}>
@@ -651,17 +711,27 @@ export default function Customers() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {voucherTemplates.map((template) => {
                   const selected = voucherForm.templateId === template.id;
+                  const alreadyActiveForCustomer = selectedCustomerActiveTemplates.has(template.id);
                   return (
                     <button
                       type="button"
                       key={template.id}
                       onClick={() => setVoucherForm((prev) => ({ ...prev, templateId: template.id }))}
-                      className={`text-left rounded-2xl overflow-hidden border-2 transition-all ${selected ? "border-secondary ring-2 ring-secondary/20 shadow-lg" : "border-border hover:border-secondary/50"}`}
+                      disabled={alreadyActiveForCustomer}
+                      className={`text-left rounded-2xl overflow-hidden border-2 transition-all ${
+                        alreadyActiveForCustomer
+                          ? "border-border opacity-60 cursor-not-allowed"
+                          : selected
+                          ? "border-secondary ring-2 ring-secondary/20 shadow-lg"
+                          : "border-border hover:border-secondary/50"
+                      }`}
                     >
                       <img src={template.frontImage} alt={`${template.name} artwork`} className="w-full aspect-[2.75/1] object-cover" />
                       <div className="px-4 py-3 flex items-center justify-between bg-muted/20">
                         <span className="font-bold text-primary">{template.name}</span>
-                        <span className="text-xs font-semibold text-muted-foreground">{selected ? "Selected" : "Select"}</span>
+                        <span className="text-xs font-semibold text-muted-foreground">
+                          {alreadyActiveForCustomer ? "Already active" : selected ? "Selected" : "Select"}
+                        </span>
                       </div>
                     </button>
                   );
@@ -704,6 +774,74 @@ export default function Customers() {
             </button>
           </div>
         </form>
+
+        <section className="bg-card rounded-2xl border border-border/50 shadow-sm p-6 mt-8">
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
+            <div>
+              <h2 className="text-lg font-bold text-primary">Assigned vouchers</h2>
+              <p className="text-sm text-muted-foreground mt-1">Review every customer assignment and revoke active vouchers when needed.</p>
+            </div>
+            <div className="relative w-full sm:w-80">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <input
+                type="search"
+                value={voucherLedgerSearch}
+                onChange={(e) => setVoucherLedgerSearch(e.target.value)}
+                placeholder="Search customer, voucher, or status..."
+                className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-border bg-background focus:ring-2 focus:ring-primary/20 outline-none text-sm"
+              />
+            </div>
+          </div>
+
+          <div className="border border-border/60 rounded-xl overflow-hidden">
+            {assignedVouchersLoading ? (
+              <div className="p-10 text-center text-sm text-muted-foreground">Loading assigned vouchers...</div>
+            ) : filteredAssignedVouchers.length === 0 ? (
+              <div className="p-10 text-center text-sm text-muted-foreground">
+                {voucherLedgerSearch ? "No voucher assignments match this search." : "No vouchers have been assigned yet."}
+              </div>
+            ) : (
+              <div className="divide-y divide-border/50">
+                {filteredAssignedVouchers.map((voucher) => {
+                  const voucherId = voucher.id || voucher._id;
+                  const statusLabel = voucher.available ? "Active" : voucher.status === "assigned" ? "Scheduled" : voucher.status;
+                  const statusClass = voucher.available
+                    ? "bg-emerald-100 text-emerald-700"
+                    : voucher.status === "redeemed"
+                    ? "bg-slate-100 text-slate-600"
+                    : voucher.status === "revoked"
+                    ? "bg-red-100 text-red-600"
+                    : "bg-amber-100 text-amber-700";
+                  return (
+                    <div key={voucherId} className="p-4 flex flex-wrap items-center gap-4">
+                      <img src={voucher.frontImage} alt="" className="w-28 h-12 object-cover rounded-lg border border-border/50 shrink-0" />
+                      <div className="min-w-[12rem] flex-1">
+                        <p className="font-bold text-sm text-foreground">{voucher.customerName || "Unknown customer"}</p>
+                        <p className="text-sm text-primary font-semibold mt-0.5">{voucher.templateName} · ₹{Number(voucher.amount).toLocaleString("en-IN")}</p>
+                        <p className="text-xs text-muted-foreground mt-1">{voucher.voucherCode}</p>
+                      </div>
+                      <div className="text-xs text-muted-foreground min-w-[12rem]">
+                        <p>Issued: <span className="font-medium text-foreground">{voucher.issueDate ? format(parseISO(voucher.issueDate), "dd MMM yyyy") : "—"}</span></p>
+                        <p className="mt-1">Expires: <span className="font-medium text-foreground">{voucher.expiryDate ? format(parseISO(voucher.expiryDate), "dd MMM yyyy") : "—"}</span></p>
+                      </div>
+                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${statusClass}`}>{statusLabel}</span>
+                      {voucher.status === "assigned" && (
+                        <button
+                          type="button"
+                          onClick={() => handleRevokeVoucher(voucher)}
+                          disabled={revokingVoucherId === voucherId}
+                          className="px-3 py-2 rounded-lg border border-red-200 text-red-600 text-xs font-semibold hover:bg-red-50 transition-colors disabled:opacity-50"
+                        >
+                          {revokingVoucherId === voucherId ? "Revoking..." : "Revoke"}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </section>
       </div>
     );
   }
