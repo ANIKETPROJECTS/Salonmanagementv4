@@ -58,7 +58,9 @@ export default function Invoices() {
         b.customerName?.toLowerCase().includes(term) ||
         b.customerPhone?.includes(term) ||
         b.billNumber?.toLowerCase().includes(term);
-      const matchPay = payFilter === "all" || b.paymentMethod === payFilter;
+      const matchPay = payFilter === "all"
+        || b.paymentMethod === payFilter
+        || (Array.isArray(b.paymentBreakdown) && b.paymentBreakdown.some((payment: any) => payment.method === payFilter));
       const date = new Date(b.createdAt);
       const matchFrom = !fromDate || date >= new Date(fromDate);
       const matchTo = !toDate || date <= new Date(toDate + "T23:59:59");
@@ -230,9 +232,16 @@ export default function Invoices() {
 
                     {/* Payment */}
                     <td className="p-4">
-                      <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-semibold capitalize ${PAY_COLORS[bill.paymentMethod] || "bg-muted text-muted-foreground"}`}>
-                        {bill.paymentMethod}
-                      </span>
+                      <div className="flex flex-wrap gap-1">
+                        {(Array.isArray(bill.paymentBreakdown) && bill.paymentBreakdown.length > 0
+                          ? bill.paymentBreakdown
+                          : [{ method: bill.paymentMethod, amount: bill.finalAmount }]
+                        ).map((payment: any, index: number) => (
+                          <span key={`${payment.method}-${index}`} title={`₹${Number(payment.amount || 0).toLocaleString("en-IN")}`} className={`inline-block px-2.5 py-1 rounded-full text-xs font-semibold capitalize ${PAY_COLORS[payment.method] || "bg-muted text-muted-foreground"}`}>
+                            {payment.method}{bill.paymentBreakdown?.length > 1 ? ` ₹${Number(payment.amount || 0).toLocaleString("en-IN")}` : ""}
+                          </span>
+                        ))}
+                      </div>
                     </td>
 
                     {/* Amount */}

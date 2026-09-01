@@ -196,10 +196,15 @@ router.get("/reports/analytics", async (req, res) => {
   // ── Payment Mix ──
   const paymentMap: Record<string, { count: number; amount: number }> = {};
   for (const bill of bills) {
-    const m = bill.paymentMethod || "cash";
-    if (!paymentMap[m]) paymentMap[m] = { count: 0, amount: 0 };
-    paymentMap[m].count += 1;
-    paymentMap[m].amount += bill.finalAmount;
+    const payments = Array.isArray((bill as any).paymentBreakdown) && (bill as any).paymentBreakdown.length > 0
+      ? (bill as any).paymentBreakdown
+      : [{ method: bill.paymentMethod || "cash", amount: bill.finalAmount }];
+    for (const payment of payments) {
+      const m = String(payment.method || "cash").toLowerCase();
+      if (!paymentMap[m]) paymentMap[m] = { count: 0, amount: 0 };
+      paymentMap[m].count += 1;
+      paymentMap[m].amount += Number(payment.amount) || 0;
+    }
   }
   const paymentMix = Object.entries(paymentMap).map(([method, d]) => ({ method, ...d })).sort((a, b) => b.amount - a.amount);
 

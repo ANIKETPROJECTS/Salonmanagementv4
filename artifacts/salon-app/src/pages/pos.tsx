@@ -30,7 +30,9 @@ const PAYMENT_METHODS = [
   { id: "upi",    icon: Smartphone, label: "UPI" },
   { id: "card",   icon: CreditCard, label: "Card" },
   { id: "wallet", icon: Wallet,     label: "Wallet" },
-];
+] as const;
+type PaymentMethodId = (typeof PAYMENT_METHODS)[number]["id"];
+type PaymentSplit = { method: PaymentMethodId; amount: string };
 
 const poppins = { fontFamily: "'Poppins', sans-serif" } as const;
 
@@ -159,7 +161,7 @@ export default function POS() {
   const [customerPhone, setCustomerPhone]   = useState<string>("");
   const [customerDob, setCustomerDob]       = useState<string>("");
   const [customerAnniversary, setCustomerAnniversary] = useState<string>("");
-  const [paymentMethod, setPaymentMethod]   = useState<"cash" | "upi" | "card" | "wallet">("upi");
+  const [paymentSplits, setPaymentSplits]   = useState<PaymentSplit[]>([{ method: "upi", amount: "" }]);
   const [taxEnabled, setTaxEnabled]         = useState(false);
   const [taxRate, setTaxRate]               = useState(18);
   const [selectedMemberParentName, setSelectedMemberParentName] = useState("");
@@ -311,7 +313,14 @@ export default function POS() {
         setCustomerPhone(bill.customerPhone || "");
         setCustomerDob(bill.customerDob || "");
         setCustomerAnniversary(bill.customerAnniversary || "");
-        setPaymentMethod(bill.paymentMethod || "upi");
+        const restoredPayments = Array.isArray(bill.paymentBreakdown) && bill.paymentBreakdown.length > 0
+          ? bill.paymentBreakdown
+              .filter((payment: any) => ["cash", "upi", "card", "wallet"].includes(payment.method))
+              .map((payment: any) => ({ method: payment.method as PaymentMethodId, amount: String(payment.amount ?? "") }))
+          : [];
+        setPaymentSplits(restoredPayments.length > 0
+          ? restoredPayments
+          : [{ method: (["cash", "upi", "card", "wallet"].includes(bill.paymentMethod) ? bill.paymentMethod : "upi") as PaymentMethodId, amount: String(bill.finalAmount ?? "") }]);
         setTaxEnabled((bill.taxPercent || 0) > 0);
         setTaxRate(bill.taxPercent || 18);
         setGlobalDiscountAmt(bill.discountAmount || 0);
@@ -459,6 +468,50 @@ export default function POS() {
   const afterDiscount        = Math.max(0, subtotal - globalDiscountAmount - voucherDiscountAmount);
   const taxAmount            = (afterDiscount * taxPercent) / 100;
   const finalAmount          = Math.round(afterDiscount + taxAmount);
+  const paymentTotal         = paymentSplits.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0);
+  const paymentRemaining     = finalAmount - paymentTotal;
+  const paymentIsComplete    = Math.abs(paymentRemaining) < 0.01;
+
+  useEffect(() => {
+    setPaymentSplits(previous => previous.length === 1
+      ? [{ ...previous[0], amount: finalAmount > 0 ? String(finalAmount) : "" }]
+      : previous);
+  }, [finalAmount]);
+
+  const addPaymentSplit = () => {
+    const nextMethod = PAYMENT_METHODS.find(method => !paymentSplits.some(payment => payment.method === method.id));
+    if (!nextMethod) return;
+    const remaining = Math.max(0, finalAmount - paymentTotal);
+    setPaymentSplits(previous => [...previous, {
+      method: nextMethod.id,
+      amount: remaining > 0 ? String(remaining) : "",
+    }]);
+  };
+
+  const removePaymentSplit = (index: number) => {
+    setPaymentSplits(previous => previous.filter((_, paymentIndex) => paymentIndex !== index));
+  };
+
+  const getPaymentAmountMax = (index: number) => Math.max(
+    0,
+    finalAmount - paymentSplits.reduce((sum, payment, paymentIndex) =>
+      paymentIndex === index ? sum : sum + (Number(payment.amount) || 0), 0)
+  );
+
+  const updatePaymentSplit = (index: number, field: "method" | "amount", value: string) => {
+    setPaymentSplits(previous => previous.map((payment, paymentIndex) => {
+      if (paymentIndex !== index) return payment;
+      if (field === "method") return { ...payment, method: value as PaymentMethodId };
+      const sanitized = value.replace(/[^\d.]/g, "").replace(/(\..*)\./g, "$1");
+      if (!sanitized) return { ...payment, amount: "" };
+      const maxAmount = Math.max(
+        0,
+        finalAmount - previous.reduce((sum, otherPayment, otherIndex) =>
+          otherIndex === index ? sum : sum + (Number(otherPayment.amount) || 0), 0)
+      );
+      return { ...payment, amount: String(Math.min(maxAmount, Number(sanitized) || 0)) };
+    }));
+  };
 
   const fetchMembership = async (cid: string) => {
     try {
@@ -583,13 +636,26 @@ export default function POS() {
   const handleGenerateBill = async () => {
     if (cart.length === 0) { toast({ title: "Cart is empty", description: "Add at least one item.", variant: "destructive" }); return; }
     if (voucherError) { toast({ title: "Voucher cannot be applied", description: voucherError, variant: "destructive" }); return; }
+    if (!paymentIsComplete) {
+      toast({
+        title: "Payment amounts do not match",
+        description: paymentRemaining > 0
+          ? `Enter ₹${paymentRemaining.toLocaleString("en-IN")} more to complete the payment.`
+          : `Payment exceeds the bill by ₹${Math.abs(paymentRemaining).toLocaleString("en-IN")}.`,
+        variant: "destructive",
+      });
+      return;
+    }
 
     const currentEditBillId = editBillIdRef.current;
 
     const billData = {
       customerId: customerId || null, customerName: customerName || "Walk-in Customer", customerPhone: customerPhone || "",
       items: cart.map(i => ({ type: i.type, itemId: i.itemId, name: i.name, staffId: i.staffId || null, staffName: i.staffName || null, price: i.price, quantity: i.quantity, discount: i.discountAmt, total: getItemTotal(i), durationMonths: i.durationMonths, isUpgradation: i.isUpgradation || false })),
-      subtotal, taxPercent, taxAmount, paymentMethod, discountAmount: globalDiscountAmount, finalAmount, status: "paid",
+      subtotal, taxPercent, taxAmount,
+      paymentMethod: paymentSplits.length > 1 ? "multiple" : paymentSplits[0].method,
+      paymentBreakdown: paymentSplits.map(payment => ({ method: payment.method, amount: Number(payment.amount) || 0 })),
+      discountAmount: globalDiscountAmount, finalAmount, status: "paid",
       voucherId: selectedVoucher?.id || selectedVoucher?._id || null,
       voucherAmount: voucherDiscountAmount,
       notes: [
@@ -638,6 +704,7 @@ export default function POS() {
         setCart([]); setCustomerId(""); setCustomerName("Walk-in Customer"); setCustomerPhone("");
         setCustomerDob(""); setCustomerAnniversary(""); setGlobalDiscountAmt(0); setCustomerMembership(null);
         setCustomerVouchers([]); setSelectedVoucher(null);
+         setPaymentSplits([{ method: "upi", amount: "" }]);
         setPosFamilyToAdd([]); setShowPosFamilySection(false);
         navigate("/invoices");
       } catch (err: any) {
@@ -666,6 +733,7 @@ export default function POS() {
           setCart([]); setCustomerId(""); setCustomerName("Walk-in Customer"); setCustomerPhone("");
           setCustomerDob(""); setCustomerAnniversary(""); setGlobalDiscountAmt(0); setCustomerMembership(null);
           setCustomerVouchers([]); setSelectedVoucher(null);
+           setPaymentSplits([{ method: "upi", amount: "" }]);
           setPosFamilyToAdd([]); setShowPosFamilySection(false);
         },
         onError: (error: any) => toast({ title: "Failed to generate bill", description: error?.message || "Please check the voucher rules and try again.", variant: "destructive" }),
@@ -1255,24 +1323,76 @@ export default function POS() {
           </div>
 
           <div className="px-4 pb-3">
-            <p className="text-[10px] uppercase tracking-widest font-bold mb-2 text-white">Payment Method</p>
-            <div className="grid grid-cols-4 gap-1.5">
-              {PAYMENT_METHODS.map(m => (
-                <button key={m.id} onClick={() => setPaymentMethod(m.id as any)}
-                  className="py-2.5 flex flex-col items-center gap-1 rounded-xl text-xs font-semibold transition-all"
-                  style={paymentMethod === m.id
-                    ? { background: "white", color: "hsl(var(--primary))", boxShadow: "0 2px 8px rgba(0,0,0,0.2)" }
-                    : { background: "hsl(var(--sidebar-accent))", color: "white" }}>
-                  <m.icon className="w-4 h-4" />
-                  {m.label}
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10px] uppercase tracking-widest font-bold text-white">Payment Method</p>
+              {paymentSplits.length < PAYMENT_METHODS.length && (
+                <button
+                  type="button"
+                  onClick={addPaymentSplit}
+                  className="text-[10px] font-semibold text-rose-200 hover:text-white transition-colors"
+                >
+                  + Add method
                 </button>
+              )}
+            </div>
+            <div className="space-y-2">
+              {paymentSplits.map((payment, index) => (
+                <div key={`${payment.method}-${index}`} className="flex items-center gap-2">
+                  <select
+                    value={payment.method}
+                    onChange={e => updatePaymentSplit(index, "method", e.target.value)}
+                    className="min-w-0 flex-1 rounded-lg bg-sidebar-accent border border-sidebar-border text-white text-xs font-semibold px-2 py-2 focus:outline-none focus:ring-1 focus:ring-white/40"
+                  >
+                    {PAYMENT_METHODS.map(method => (
+                      <option
+                        key={method.id}
+                        value={method.id}
+                        disabled={paymentSplits.some((other, otherIndex) => otherIndex !== index && other.method === method.id)}
+                      >
+                        {method.label}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="flex items-center rounded-lg overflow-hidden bg-sidebar-accent border border-sidebar-border">
+                    <span className="text-[11px] px-2 text-white/60">₹</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={payment.amount}
+                      onChange={e => updatePaymentSplit(index, "amount", e.target.value)}
+                      max={getPaymentAmountMax(index)}
+                      placeholder="0"
+                      className={`w-20 text-xs text-right px-2 py-2 focus:outline-none bg-transparent font-semibold text-white ${noSpinner}`}
+                    />
+                  </div>
+                  {paymentSplits.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removePaymentSplit(index)}
+                      title="Remove payment method"
+                      className="p-1.5 rounded-lg text-white/60 hover:text-red-200 hover:bg-white/10 transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
               ))}
+            </div>
+            <div className={`flex justify-between items-center mt-2 text-[11px] font-semibold ${paymentIsComplete ? "text-emerald-200" : "text-amber-200"}`}>
+              <span>Paid ₹{paymentTotal.toLocaleString("en-IN")}</span>
+              <span>
+                {paymentIsComplete
+                  ? "Payment complete"
+                  : paymentRemaining > 0
+                  ? `Remaining ₹${paymentRemaining.toLocaleString("en-IN")}`
+                  : `Overpaid ₹${Math.abs(paymentRemaining).toLocaleString("en-IN")}`}
+              </span>
             </div>
           </div>
 
           <div className="px-4 pb-5">
             {(() => {
-              const isDisabled = cart.length === 0 || Boolean(voucherError) || createBill.isPending || isEditSubmitting;
+              const isDisabled = cart.length === 0 || Boolean(voucherError) || !paymentIsComplete || createBill.isPending || isEditSubmitting;
               const isActive = !isDisabled;
               return (
                 <button onClick={handleGenerateBill} disabled={isDisabled}

@@ -234,6 +234,11 @@ export interface IBillItem {
   isUpgradation?: boolean;
 }
 
+export interface IPaymentBreakdown {
+  method: string;
+  amount: number;
+}
+
 export interface IBill extends Document {
   billNumber: string;
   customerId?: string;
@@ -249,6 +254,7 @@ export interface IBill extends Document {
   voucherAmount?: number;
   finalAmount: number;
   paymentMethod: string;
+  paymentBreakdown?: IPaymentBreakdown[];
   status: string;
   notes?: string;
   createdAt: Date;
@@ -286,6 +292,13 @@ const BillSchema = new Schema<IBill>(
     voucherAmount: { type: Number, default: 0 },
     finalAmount: { type: Number, required: true },
     paymentMethod: { type: String, default: "cash" },
+    paymentBreakdown: {
+      type: [{
+        method: { type: String, required: true },
+        amount: { type: Number, required: true, min: 0 },
+      }],
+      default: undefined,
+    },
     status: { type: String, default: "paid" },
     notes: { type: String, default: "" },
   },

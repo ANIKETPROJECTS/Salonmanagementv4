@@ -105,10 +105,15 @@ router.get("/dashboard/stats", async (_req, res) => {
   // Payment method breakdown (this month)
   const paymentBreakdown: Record<string, { count: number; amount: number }> = {};
   for (const bill of monthBillDocs) {
-    const method = (bill.paymentMethod || "other").toLowerCase();
-    if (!paymentBreakdown[method]) paymentBreakdown[method] = { count: 0, amount: 0 };
-    paymentBreakdown[method].count++;
-    paymentBreakdown[method].amount += bill.finalAmount;
+    const payments = Array.isArray((bill as any).paymentBreakdown) && (bill as any).paymentBreakdown.length > 0
+      ? (bill as any).paymentBreakdown
+      : [{ method: bill.paymentMethod || "other", amount: bill.finalAmount }];
+    for (const payment of payments) {
+      const method = String(payment.method || "other").toLowerCase();
+      if (!paymentBreakdown[method]) paymentBreakdown[method] = { count: 0, amount: 0 };
+      paymentBreakdown[method].count++;
+      paymentBreakdown[method].amount += Number(payment.amount) || 0;
+    }
   }
 
   // Last 6 months revenue + expenses trend

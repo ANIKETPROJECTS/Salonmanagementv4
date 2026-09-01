@@ -34,7 +34,7 @@ interface BillItem {
 }
 interface StaffBill {
   billId: string; billNumber: string; customerName: string; customerPhone: string;
-  date: string; billGrandTotal: number; paymentMethod: string; status: string; items: BillItem[];
+  date: string; billGrandTotal: number; paymentMethod: string; paymentBreakdown?: { method: string; amount: number }[]; status: string; items: BillItem[];
 }
 interface StaffData {
   staffId: string | null; staffName: string; staffRole: string; staffPhone: string;
@@ -327,7 +327,7 @@ export default function StaffDetail() {
       setViewBill({
         _id: bill.billId, billNumber: bill.billNumber, customerName: bill.customerName,
         customerPhone: bill.customerPhone, createdAt: bill.date, finalAmount: bill.billGrandTotal,
-        paymentMethod: bill.paymentMethod, status: bill.status,
+        paymentMethod: bill.paymentMethod, paymentBreakdown: bill.paymentBreakdown, status: bill.status,
         items: bill.items.map(i => ({ name: i.name, type: i.type, total: i.total, quantity: 1, price: i.total })),
         subtotal: bill.billGrandTotal, taxAmount: 0, discountAmount: 0,
       });
@@ -547,8 +547,13 @@ export default function StaffDetail() {
                                     </span>
                                   )}
                                   {bill.paymentMethod && (
-                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-semibold capitalize ${PAY_COLORS[bill.paymentMethod] || "bg-muted text-muted-foreground"}`}>
-                                      {bill.paymentMethod.toUpperCase()}
+                                    <span title={bill.paymentBreakdown && bill.paymentBreakdown.length > 1
+                                      ? bill.paymentBreakdown.map(payment => `${payment.method}: ₹${Number(payment.amount || 0).toLocaleString("en-IN")}`).join(" · ")
+                                      : undefined}
+                                      className={`px-2 py-0.5 rounded-full text-[9px] font-semibold capitalize ${PAY_COLORS[bill.paymentMethod] || "bg-muted text-muted-foreground"}`}>
+                                      {bill.paymentBreakdown && bill.paymentBreakdown.length > 1
+                                        ? bill.paymentBreakdown.map(payment => `${payment.method}: ₹${Number(payment.amount || 0).toLocaleString("en-IN")}`).join(" · ")
+                                        : bill.paymentMethod.toUpperCase()}
                                     </span>
                                   )}
                                 </div>

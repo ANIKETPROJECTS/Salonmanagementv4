@@ -722,6 +722,11 @@ components:
           type: number
         paymentMethod:
           type: string
+        paymentBreakdown:
+          type: array
+          description: Amount collected through each payment method. Legacy bills may omit this field.
+          items:
+            $ref: "#/components/schemas/PaymentBreakdown"
         status:
           type: string
         createdAt:
@@ -736,6 +741,17 @@ components:
           items:
             $ref: "#/components/schemas/Bill"
       required: [bills]
+
+    PaymentBreakdown:
+      type: object
+      properties:
+        method:
+          type: string
+          enum: [cash, upi, card, wallet]
+        amount:
+          type: number
+          minimum: 0
+      required: [method, amount]
 
     CreateBillBody:
       type: object
@@ -762,6 +778,11 @@ components:
           type: number
         paymentMethod:
           type: string
+        paymentBreakdown:
+          type: array
+          description: Optional split of the final amount across payment methods.
+          items:
+            $ref: "#/components/schemas/PaymentBreakdown"
         status:
           type: string
       required: [items, finalAmount, paymentMethod, status]

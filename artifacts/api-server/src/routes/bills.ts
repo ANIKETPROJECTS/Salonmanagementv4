@@ -3,6 +3,41 @@ import { Bill, Customer, CustomerVoucher, Appointment } from "../models/index.js
 import { todayDate } from "../lib/vouchers.js";
 
 const router = Router();
+const PAYMENT_METHOD_IDS = new Set(["cash", "upi", "card", "wallet"]);
+
+function normalizePaymentData(
+  rawBreakdown: unknown,
+  fallbackMethod: unknown,
+  total: number,
+): { paymentMethod: string; paymentBreakdown: { method: string; amount: number }[]; error?: string } {
+  if (Array.isArray(rawBreakdown) && rawBreakdown.length > 0) {
+    const paymentBreakdown = rawBreakdown.map((entry: any) => ({
+      method: String(entry?.method || "").toLowerCase(),
+      amount: Number(entry?.amount),
+    }));
+    if (paymentBreakdown.some((entry) => !PAYMENT_METHOD_IDS.has(entry.method) || !Number.isFinite(entry.amount) || entry.amount < 0)) {
+      return { paymentMethod: "cash", paymentBreakdown: [], error: "Each payment must use a valid method and a non-negative amount." };
+    }
+    if (new Set(paymentBreakdown.map((entry) => entry.method)).size !== paymentBreakdown.length) {
+      return { paymentMethod: "cash", paymentBreakdown: [], error: "Each payment method can only be added once." };
+    }
+    const paidTotal = paymentBreakdown.reduce((sum, entry) => sum + entry.amount, 0);
+    if (Math.abs(paidTotal - total) > 0.01) {
+      return { paymentMethod: "cash", paymentBreakdown: [], error: `Payment amounts must add up to ₹${Math.round(total).toLocaleString("en-IN")}.` };
+    }
+    return {
+      paymentMethod: paymentBreakdown.length > 1 ? "multiple" : paymentBreakdown[0].method,
+      paymentBreakdown,
+    };
+  }
+
+  const method = String(fallbackMethod || "cash").toLowerCase();
+  const safeMethod = PAYMENT_METHOD_IDS.has(method) ? method : "cash";
+  return {
+    paymentMethod: safeMethod,
+    paymentBreakdown: [{ method: safeMethod, amount: Math.max(0, total) }],
+  };
+}
 
 // Generate sequential bill number: TT{YYYYMMDD}-{seq}, sequence resets daily.
 // Uses the highest existing sequence for today to avoid duplicates caused by
@@ -106,7 +141,12 @@ router.get("/bills", async (req, res) => {
   const { customerId, from, to, paymentMethod } = req.query as Record<string, string>;
   const query: Record<string, any> = {};
   if (customerId) query.customerId = customerId;
-  if (paymentMethod) query.paymentMethod = paymentMethod;
+  if (paymentMethod) {
+    query.$or = [
+      { paymentMethod },
+      { paymentBreakdown: { $elemMatch: { method: paymentMethod } } },
+    ];
+  }
   if (from || to) {
     query.createdAt = {};
     if (from) query.createdAt.$gte = new Date(from);
@@ -145,9 +185,12 @@ router.put("/bills/:billId", async (req, res) => {
     discountAmount,
     finalAmount,
     paymentMethod,
+    paymentBreakdown,
     status,
     notes,
   } = req.body;
+  const normalizedPayment = normalizePaymentData(paymentBreakdown, paymentMethod, Number(finalAmount) || 0);
+  if (normalizedPayment.error) return res.status(400).json({ error: normalizedPayment.error });
 
   // Reverse old customer stats, apply new ones
   if (bill.customerId) {
@@ -166,7 +209,8 @@ router.put("/bills/:billId", async (req, res) => {
     taxAmount: taxAmount || 0,
     discountAmount: discountAmount || 0,
     finalAmount,
-    paymentMethod,
+    paymentMethod: normalizedPayment.paymentMethod,
+    paymentBreakdown: normalizedPayment.paymentBreakdown,
     status: status || "paid",
     notes: notes || "",
   });
@@ -209,6 +253,7 @@ router.post("/bills", async (req, res) => {
     discountAmount,
     finalAmount,
     paymentMethod,
+    paymentBreakdown,
     status,
     notes,
     voucherId,
@@ -304,6 +349,13 @@ router.post("/bills", async (req, res) => {
       computedFinalAmount = Math.round(computedTaxBase + computedTaxAmount);
     }
 
+    const normalizedPayment = normalizePaymentData(paymentBreakdown, paymentMethod, computedFinalAmount);
+    if (normalizedPayment.error) {
+      const paymentError: any = new Error(normalizedPayment.error);
+      paymentError.statusCode = 400;
+      throw paymentError;
+    }
+
     const bill = await Bill.create({
       billNumber,
       customerId: customerId || undefined,
@@ -318,7 +370,8 @@ router.post("/bills", async (req, res) => {
       voucherCode: appliedVoucher?.voucherCode,
       voucherAmount,
       finalAmount: computedFinalAmount,
-      paymentMethod,
+      paymentMethod: normalizedPayment.paymentMethod,
+      paymentBreakdown: normalizedPayment.paymentBreakdown,
       status: status || "paid",
       notes: notes || "",
     });
@@ -344,7 +397,7 @@ router.post("/bills", async (req, res) => {
         { $set: { status: "assigned" }, $unset: { redeemedAt: 1 } }
       ).catch(() => {});
     }
-    res.status(500).json({ error: error?.message || "Failed to create bill" });
+    res.status(error?.statusCode || 500).json({ error: error?.message || "Failed to create bill" });
   }
 });
 

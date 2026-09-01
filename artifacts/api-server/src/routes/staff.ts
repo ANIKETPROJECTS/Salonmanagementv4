@@ -78,6 +78,7 @@ router.get("/staff/:staffId/work-history", async (req, res) => {
       })),
       totalEarned: assignedItems.reduce((acc: number, item: any) => acc + (item.total || 0), 0),
       paymentMethod: bill.paymentMethod,
+      paymentBreakdown: bill.paymentBreakdown || [{ method: bill.paymentMethod || "cash", amount: bill.finalAmount || 0 }],
       customerPhone: bill.customerPhone || "",
     };
   });

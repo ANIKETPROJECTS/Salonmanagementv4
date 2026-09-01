@@ -42,6 +42,7 @@ interface Bill {
   voucherAmount?: number;
   finalAmount: number;
   paymentMethod: string;
+  paymentBreakdown?: { method: string; amount: number }[];
   status: string;
   notes?: string;
   createdAt: string | Date;
@@ -296,11 +297,18 @@ export function InvoiceModal({ bill, onClose }: InvoiceModalProps) {
             )}
 
             {/* ── PAYMENT ── */}
-            <div style={{ marginTop: 24, display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ marginTop: 24, display: "flex", alignItems: "flex-start", gap: 10 }}>
               <span style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: 2, color: "#999", fontWeight: 600, fontFamily: f }}>Payment via</span>
-              <span style={{ border: "1.5px solid #111", borderRadius: 6, padding: "4px 14px", fontSize: 12, fontWeight: 700, textTransform: "capitalize", color: "#111", fontFamily: f }}>
-                {bill.paymentMethod}
-              </span>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 5 }}>
+                {(bill.paymentBreakdown && bill.paymentBreakdown.length > 0
+                  ? bill.paymentBreakdown
+                  : [{ method: bill.paymentMethod, amount: bill.finalAmount }]
+                ).map((payment, index) => (
+                  <span key={`${payment.method}-${index}`} style={{ border: "1.5px solid #111", borderRadius: 6, padding: "4px 14px", fontSize: 12, fontWeight: 700, textTransform: "capitalize", color: "#111", fontFamily: f }}>
+                    {payment.method} · ₹{Number(payment.amount || 0).toLocaleString("en-IN")}
+                  </span>
+                ))}
+              </div>
             </div>
 
             {/* ── FOOTER ── */}

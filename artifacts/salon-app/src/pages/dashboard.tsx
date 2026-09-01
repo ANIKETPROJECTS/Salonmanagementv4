@@ -21,7 +21,7 @@ const STATUS_CFG: Record<string, { bg: string; text: string; ring: string; dot: 
 };
 
 const PM_COLORS: Record<string, string> = {
-  cash: "#10b981", card: "#7c3aed", upi: "#f59e0b", wallet: "#3b82f6", other: "#94a3b8",
+  cash: "#10b981", card: "#7c3aed", upi: "#f59e0b", wallet: "#3b82f6", multiple: "#db2777", other: "#94a3b8",
 };
 const PALETTE = ["#7c3aed", "#db2777", "#f59e0b", "#10b981", "#3b82f6", "#ea580c"];
 
@@ -147,10 +147,15 @@ export default function Dashboard() {
   const todayPayEntries = useMemo(() => {
     const map: Record<string, { count: number; amount: number }> = {};
     for (const bill of todayBillsList) {
-      const method = (bill.paymentMethod || "other").toLowerCase();
-      if (!map[method]) map[method] = { count: 0, amount: 0 };
-      map[method].count++;
-      map[method].amount += bill.finalAmount || 0;
+      const payments = Array.isArray(bill.paymentBreakdown) && bill.paymentBreakdown.length > 0
+        ? bill.paymentBreakdown
+        : [{ method: bill.paymentMethod || "other", amount: bill.finalAmount || 0 }];
+      for (const payment of payments) {
+        const method = (payment.method || "other").toLowerCase();
+        if (!map[method]) map[method] = { count: 0, amount: 0 };
+        map[method].count++;
+        map[method].amount += Number(payment.amount) || 0;
+      }
     }
     return Object.entries(map)
       .map(([method, d]) => ({ method, ...d }))
@@ -704,7 +709,10 @@ export default function Dashboard() {
                       </td>
                       <td className="px-3 py-3.5 text-gray-400 hidden sm:table-cell">{staffNames || "—"}</td>
                       <td className="px-3 py-3.5 text-center">
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold capitalize"
+                        <span title={Array.isArray(bill.paymentBreakdown) && bill.paymentBreakdown.length > 1
+                          ? bill.paymentBreakdown.map((payment: any) => `${payment.method}: ₹${Number(payment.amount || 0).toLocaleString("en-IN")}`).join(" · ")
+                          : undefined}
+                          className="px-2 py-0.5 rounded-full text-[10px] font-bold capitalize"
                           style={{ backgroundColor: `${PM_COLORS[bill.paymentMethod] || "#94a3b8"}22`, color: PM_COLORS[bill.paymentMethod] || "#94a3b8" }}>
                           {bill.paymentMethod || "other"}
                         </span>

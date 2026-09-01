@@ -270,7 +270,9 @@ export default function StaffHistory() {
                       ))}
                       <div className="ml-auto">
                         <span className="capitalize text-xs px-2 py-1 bg-muted rounded-lg text-muted-foreground">
-                          {entry.paymentMethod}
+                           {Array.isArray(entry.paymentBreakdown) && entry.paymentBreakdown.length > 1
+                             ? entry.paymentBreakdown.map((payment: any) => `${payment.method}: ₹${Number(payment.amount || 0).toLocaleString("en-IN")}`).join(" · ")
+                             : entry.paymentMethod}
                         </span>
                       </div>
                     </div>

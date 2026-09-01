@@ -194,7 +194,11 @@ export default function CustomerHistory() {
                       <p className="font-semibold text-sm">
                         {bill.items?.length || 0} service{(bill.items?.length || 0) !== 1 ? "s" : ""}
                       </p>
-                      <p className="text-xs text-muted-foreground capitalize">{bill.paymentMethod || "—"}</p>
+                       <p className="text-xs text-muted-foreground capitalize">
+                         {Array.isArray(bill.paymentBreakdown) && bill.paymentBreakdown.length > 1
+                           ? bill.paymentBreakdown.map((payment: any) => `${payment.method}: ₹${Number(payment.amount || 0).toLocaleString("en-IN")}`).join(" · ")
+                           : bill.paymentMethod || "—"}
+                       </p>
                     </div>
                     <div className="shrink-0 text-right">
                       <p className="text-sm font-medium">
