@@ -9,6 +9,14 @@ function escapeRegex(str: string) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function serializeFamilyMember(member: any) {
+  const serialized = { ...member.toObject(), id: member._id.toString() };
+  if (typeof serialized.phone === "string" && serialized.phone.startsWith("FAM")) {
+    serialized.phone = "";
+  }
+  return serialized;
+}
+
 async function checkNamePhoneUniqueness(
   name: string,
   phone: string,
@@ -204,8 +212,7 @@ router.get("/customers", async (req, res) => {
         const fmOwnMem = membershipMap[fmId] || null;
         const fmParentMem = parentMembershipMap[cId] || null;
         return {
-          ...fm.toObject(),
-          id: fmId,
+          ...serializeFamilyMember(fm),
           familyOfId: cId,
           activeMembership: fmOwnMem || fmParentMem,
         };
@@ -259,7 +266,7 @@ router.post("/customers/:customerId/family-member", async (req, res) => {
   const trimmedPhone = (phone || "").trim();
 
   if (!trimmedName) return res.status(400).json({ error: "Name is required" });
-  if (!trimmedPhone || !/^\d{10}$/.test(trimmedPhone))
+  if (trimmedPhone && !/^\d{10}$/.test(trimmedPhone))
     return res.status(400).json({ error: "A valid 10-digit phone number is required" });
 
   const uniqueError = await checkNamePhoneUniqueness(trimmedName, trimmedPhone);
@@ -269,9 +276,19 @@ router.post("/customers/:customerId/family-member", async (req, res) => {
   if (existingCount >= 4)
     return res.status(400).json({ error: "Maximum 4 family members allowed per customer" });
 
+  // Customer.phone is globally unique and required, but family-member phone
+  // numbers are optional in the UI. Keep an internal placeholder for members
+  // without a phone and hide it from customer-facing responses.
+  let memberPhone = trimmedPhone;
+  if (!memberPhone) {
+    do {
+      memberPhone = `FAM${customerId.slice(-8)}${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 100)}`;
+    } while (await Customer.exists({ phone: memberPhone }));
+  }
+
   const member = await Customer.create({
     name: trimmedName,
-    phone: trimmedPhone,
+    phone: memberPhone,
     gender: gender || "",
     dob: dob || "",
     anniversary: anniversary || "",
@@ -395,10 +412,7 @@ router.get("/customers/:customerId", async (req, res) => {
     activeMembership: resolvedMembership,
     bills: bills.map((b) => ({ ...b.toObject(), id: b._id.toString() })),
     appointments: appointments.map((a) => ({ ...a.toObject(), id: a._id.toString() })),
-    familyMembers: familyMemberCustomers.map((m) => ({
-      ...m.toObject(),
-      id: m._id.toString(),
-    })),
+    familyMembers: familyMemberCustomers.map(serializeFamilyMember),
   });
 });
 

@@ -220,15 +220,24 @@ export default function Memberships() {
       // Save any new sub-members added during assign
       const validNew = assignNewMembers.filter(m => m.name.trim());
       if (validNew.length > 0) {
-        const existing: any[] = Array.isArray(selectedCustomer.familyMembers) ? selectedCustomer.familyMembers : [];
-        const merged = [...existing, ...validNew.map(m => ({
-          name: m.name.trim(), phone: m.phone.trim(), gender: m.gender, dob: m.dob, anniversary: m.anniversary,
-        }))];
-        await fetch(`${API_BASE}/customers/${selectedCustomer.id || selectedCustomer._id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ familyMembers: merged }),
-        });
+        const customerId = selectedCustomer.id || selectedCustomer._id;
+        for (const member of validNew) {
+          const memberRes = await fetch(`${API_BASE}/customers/${customerId}/family-member`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: member.name.trim(),
+              phone: member.phone.trim(),
+              gender: member.gender,
+              dob: member.dob,
+              anniversary: member.anniversary,
+            }),
+          });
+          if (!memberRes.ok) {
+            const error = await memberRes.json().catch(() => ({}));
+            throw new Error(error.error || "Failed to save sub-member");
+          }
+        }
       }
 
       toast({ title: "Membership assigned!", description: `${selectedCustomer.name} is now on ${assignPlan.name}` });
@@ -287,20 +296,18 @@ export default function Memberships() {
     if (!editSubMember) return;
     setEditSubMemberSaving(true);
     try {
-      const customer = customers.find((c: any) => (c.id || c._id) === editSubMember.cm.customerId);
-      if (!customer) throw new Error("Customer not found");
-      const updatedMembers = [...(customer.familyMembers || [])];
-      updatedMembers[editSubMember.idx] = {
-        name: editSubMemberForm.name.trim(),
-        phone: editSubMemberForm.phone.trim(),
-        gender: editSubMemberForm.gender,
-        dob: editSubMemberForm.dob,
-        anniversary: editSubMemberForm.anniversary,
-      };
-      const res = await fetch(`${API_BASE}/customers/${editSubMember.cm.customerId}`, {
+      const memberId = editSubMember.member.id || editSubMember.member._id;
+      if (!memberId) throw new Error("Sub-member record not found");
+      const res = await fetch(`${API_BASE}/customers/${memberId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ familyMembers: updatedMembers }),
+        body: JSON.stringify({
+          name: editSubMemberForm.name.trim(),
+          phone: editSubMemberForm.phone.trim(),
+          gender: editSubMemberForm.gender,
+          dob: editSubMemberForm.dob,
+          anniversary: editSubMemberForm.anniversary,
+        }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -340,15 +347,23 @@ export default function Memberships() {
       if (validNew.length > 0) {
         const customer = customers.find((c: any) => (c.id || c._id) === editMember.customerId);
         if (customer) {
-          const existing: any[] = Array.isArray(customer.familyMembers) ? customer.familyMembers : [];
-          const merged = [...existing, ...validNew.map(m => ({
-            name: m.name.trim(), phone: m.phone.trim(), gender: m.gender, dob: m.dob, anniversary: m.anniversary,
-          }))];
-          await fetch(`${API_BASE}/customers/${editMember.customerId}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ familyMembers: merged }),
-          });
+          for (const member of validNew) {
+            const memberRes = await fetch(`${API_BASE}/customers/${editMember.customerId}/family-member`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                name: member.name.trim(),
+                phone: member.phone.trim(),
+                gender: member.gender,
+                dob: member.dob,
+                anniversary: member.anniversary,
+              }),
+            });
+            if (!memberRes.ok) {
+              const error = await memberRes.json().catch(() => ({}));
+              throw new Error(error.error || "Failed to save sub-member");
+            }
+          }
         }
       }
 

@@ -3,3 +3,4 @@
 - [Artifact routing ports](artifact-routing-fix.md) — artifact service localPort values must match running workflows; [[ports]] mappings do not prevent router-level 502s.
 - [Mongo hanging-request 502](mongo-hanging-request-502.md) — pm2/nginx 502s after hours of uptime = stale Mongo connection + buffered queries hanging; disable bufferCommands, add timeouts/reconnect, exit on fatal errors.
 - [Secrets in ecosystem.config.cjs](pm2-ecosystem-secrets.md) — never hardcode MONGODB_URI etc. in a committed pm2 ecosystem file; load from a gitignored .env via dotenv instead.
+- [Family member storage](family-member-storage.md) — family members are separate Customer records; use the family-member endpoint, not the legacy embedded array.
