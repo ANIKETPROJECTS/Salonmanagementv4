@@ -203,45 +203,19 @@ export default function POS() {
     return `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   }, []);
 
-  // Discount from a membership plan that's being PURCHASED in this bill
-  const cartMembershipDiscount = useMemo(() => {
-    const cartMem = cart.find(i => i.type === "membership");
-    if (!cartMem) return { pct: 0, name: "" };
-    const plan = membershipPlans.find((p: any) => (p.id || p._id) === cartMem.itemId);
-    return { pct: plan?.discountPercent || 0, name: plan?.name || cartMem.name };
-  }, [cart.map(i => `${i.type}:${i.itemId}`).join(","), membershipPlans]); // eslint-disable-line
-
-  // Auto-discount: special-day discounts stack with an active membership discount.
-  // Memberships without an explicit discount still receive the standard 20% member discount.
+  // Apply exactly one customer offer. Anniversary takes precedence over
+  // birthday, and either special-day offer replaces the active-member offer.
   const { autoDiscountPct, specialLabel, membershipLabel } = useMemo(() => {
     const hasActiveMembership = Boolean(customerMembership);
-    const configuredMembershipPct = Number(customerMembership?.discountPercent);
-    const membershipPct = hasActiveMembership
-      ? (configuredMembershipPct > 0 ? configuredMembershipPct : 20)
-      : 0;
-
-    const getSpecialDayDiscount = (label: string, specialPct: number) => {
-      const totalPct = Math.min(100, specialPct + membershipPct);
-      const breakdown = membershipPct > 0
-        ? ` (${specialPct}% + ${membershipPct}% membership)`
-        : "";
-      return {
-        autoDiscountPct: totalPct,
-        specialLabel: `${label} — ${totalPct}% off${breakdown}`,
-        membershipLabel: null,
-      };
-    };
 
     if (customerAnniversary?.length >= 7 && customerAnniversary.substring(5) === todayMMDD)
-      return getSpecialDayDiscount("💐 Anniversary Special", 40);
+      return { autoDiscountPct: 40, specialLabel: "💐 Anniversary Special — 40% off", membershipLabel: null };
     if (customerDob?.length >= 7 && customerDob.substring(5) === todayMMDD)
-      return getSpecialDayDiscount("🎂 Birthday Special", 30);
-    if (hasActiveMembership && membershipPct > 0)
-      return { autoDiscountPct: membershipPct, specialLabel: null, membershipLabel: `🏷 ${customerMembership.membershipName} — ${membershipPct}% off` };
-    if (cartMembershipDiscount.pct > 0)
-      return { autoDiscountPct: cartMembershipDiscount.pct, specialLabel: null, membershipLabel: `👑 ${cartMembershipDiscount.name} — ${cartMembershipDiscount.pct}% off on services` };
+      return { autoDiscountPct: 30, specialLabel: "🎂 Birthday Special — 30% off", membershipLabel: null };
+    if (hasActiveMembership)
+      return { autoDiscountPct: 20, specialLabel: null, membershipLabel: `🏷 ${customerMembership.membershipName} — 20% off` };
     return { autoDiscountPct: 0, specialLabel: null, membershipLabel: null };
-  }, [customerDob, customerAnniversary, customerMembership, cartMembershipDiscount, todayMMDD]);
+  }, [customerDob, customerAnniversary, customerMembership, todayMMDD]);
 
   // A voucher replaces every other offer on the bill. It discounts service
   // value only, while products remain at their normal price.
