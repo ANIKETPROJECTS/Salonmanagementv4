@@ -162,10 +162,10 @@ export default function POS() {
   const [customerPhone, setCustomerPhone]   = useState<string>("");
   const [customerDob, setCustomerDob]       = useState<string>("");
   const [customerAnniversary, setCustomerAnniversary] = useState<string>("");
-  const [specialDayOverrides, setSpecialDayOverrides] = useState<{
-    birthday: boolean | null;
-    anniversary: boolean | null;
-  }>({ birthday: null, anniversary: null });
+  const [specialDayOverrides, setSpecialDayOverrides] = useState({
+    birthday: false,
+    anniversary: false,
+  });
   const [savingSpecialDayDate, setSavingSpecialDayDate] = useState<"birthday" | "anniversary" | null>(null);
   const [showSpecialDayDialog, setShowSpecialDayDialog] = useState(false);
   const [paymentSplits, setPaymentSplits]   = useState<PaymentSplit[]>([{ method: "upi", amount: "" }]);
@@ -204,16 +204,10 @@ export default function POS() {
   const customers  = customersData?.customers || [];
   const staff      = (staffData as any)?.staff || [];
 
-  // Today's MM-DD for birthday / anniversary matching
-  const todayMMDD = useMemo(() => {
-    const d = new Date();
-    return `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  }, []);
-
-  const anniversaryMatchesToday = customerAnniversary?.length >= 7 && customerAnniversary.substring(5) === todayMMDD;
-  const birthdayMatchesToday = customerDob?.length >= 7 && customerDob.substring(5) === todayMMDD;
-  const birthdayOfferActive = specialDayOverrides.birthday ?? birthdayMatchesToday;
-  const anniversaryOfferActive = specialDayOverrides.anniversary ?? anniversaryMatchesToday;
+  // Special-day offers require an explicit POS selection; saved dates do not
+  // activate the offer automatically.
+  const birthdayOfferActive = specialDayOverrides.birthday;
+  const anniversaryOfferActive = specialDayOverrides.anniversary;
   const resolvedSpecialDay = anniversaryOfferActive
     ? "anniversary"
     : birthdayOfferActive ? "birthday" : null;
@@ -302,7 +296,7 @@ export default function POS() {
         setCustomerPhone(bill.customerPhone || "");
         setCustomerDob(bill.customerDob || "");
         setCustomerAnniversary(bill.customerAnniversary || "");
-        setSpecialDayOverrides({ birthday: null, anniversary: null });
+        setSpecialDayOverrides({ birthday: false, anniversary: false });
         const restoredPayments = Array.isArray(bill.paymentBreakdown) && bill.paymentBreakdown.length > 0
           ? bill.paymentBreakdown
               .filter((payment: any) => ["cash", "upi", "card", "wallet"].includes(payment.method))
@@ -589,7 +583,7 @@ export default function POS() {
     setCustomerPhone(c.phone || "");
     setCustomerDob(c.dob || "");
     setCustomerAnniversary(c.anniversary || "");
-    setSpecialDayOverrides({ birthday: null, anniversary: null });
+    setSpecialDayOverrides({ birthday: false, anniversary: false });
     setSelectedMemberParentName(c._isFamily ? c._parentName : "");
     setSelectedVoucher(null);
     setCustomerVouchers([]);
@@ -602,7 +596,7 @@ export default function POS() {
   const selectWalkIn = () => {
     setCustomerId(""); setCustomerName("Walk-in Customer"); setCustomerPhone("");
     setCustomerDob(""); setCustomerAnniversary(""); setSelectedMemberParentName("");
-    setSpecialDayOverrides({ birthday: null, anniversary: null });
+    setSpecialDayOverrides({ birthday: false, anniversary: false });
     setShowCustomerDropdown(false); setCustomerSearch(""); setCustomerMembership(null);
     setCustomerVouchers([]); setSelectedVoucher(null);
   };
@@ -747,7 +741,7 @@ export default function POS() {
         toast({ title: "✓ Invoice Updated!", description: `Bill updated successfully — ₹${finalAmount.toLocaleString("en-IN")}` });
         setCart([]); setCustomerId(""); setCustomerName("Walk-in Customer"); setCustomerPhone("");
         setCustomerDob(""); setCustomerAnniversary(""); setGlobalDiscountAmt(0); setCustomerMembership(null);
-        setSpecialDayOverrides({ birthday: null, anniversary: null });
+        setSpecialDayOverrides({ birthday: false, anniversary: false });
         setCustomerVouchers([]); setSelectedVoucher(null);
          setPaymentSplits([{ method: "upi", amount: "" }]);
         setPosFamilyToAdd([]); setShowPosFamilySection(false);
@@ -777,7 +771,7 @@ export default function POS() {
           toast({ title: "✓ Bill Generated!", description: `${(bill as any).billNumber} — ₹${finalAmount.toLocaleString("en-IN")}` });
           setCart([]); setCustomerId(""); setCustomerName("Walk-in Customer"); setCustomerPhone("");
           setCustomerDob(""); setCustomerAnniversary(""); setGlobalDiscountAmt(0); setCustomerMembership(null);
-          setSpecialDayOverrides({ birthday: null, anniversary: null });
+          setSpecialDayOverrides({ birthday: false, anniversary: false });
           setCustomerVouchers([]); setSelectedVoucher(null);
            setPaymentSplits([{ method: "upi", amount: "" }]);
           setPosFamilyToAdd([]); setShowPosFamilySection(false);
