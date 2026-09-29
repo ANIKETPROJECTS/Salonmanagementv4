@@ -1141,6 +1141,8 @@ export default function POS() {
                 <span className="ml-auto text-[10px] text-white/55">
                   {savingSpecialDayDate
                     ? "Saving…"
+                    : birthdayOfferActive && anniversaryOfferActive
+                    ? "Both · 40%"
                     : resolvedSpecialDay === "birthday"
                     ? "Birthday · 30%"
                     : resolvedSpecialDay === "anniversary"
@@ -1165,7 +1167,7 @@ export default function POS() {
                     { id: "birthday", label: "Birthday", discount: "30% off" },
                     { id: "anniversary", label: "Anniversary", discount: "40% off" },
                   ] as const).map((occasion) => {
-                    const isActive = resolvedSpecialDay === occasion.id;
+                    const isActive = occasion.id === "birthday" ? birthdayOfferActive : anniversaryOfferActive;
                     return (
                       <button
                         key={occasion.id}
@@ -1193,24 +1195,49 @@ export default function POS() {
                   })}
                 </div>
 
-                {specialDayDateField ? (
+                <p className="-mt-1 text-[10px] text-white/50">
+                  Both can be selected and saved. Anniversary takes priority at 40% when both offers are active.
+                </p>
+
+                {birthdayOfferActive && (
                   <label className="block -mt-1">
                     <span className="block mb-1 text-[11px] text-white/75">
-                      {specialDayDateField === "birthday" ? "Birthday" : "Anniversary"} date
+                      Birthday date
                       <span className="ml-1 text-white/45">(optional)</span>
                     </span>
                     <input
                       type="date"
-                      value={specialDayDateField === "birthday" ? customerDob : customerAnniversary}
+                      value={customerDob}
                       disabled={Boolean(savingSpecialDayDate)}
-                      onChange={(event) => handleSpecialDayDateChange(specialDayDateField, event.target.value)}
+                      onChange={(event) => handleSpecialDayDateChange("birthday", event.target.value)}
                       className="w-full rounded-lg bg-sidebar border border-sidebar-border px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-rose-300/60 disabled:opacity-60"
+                      style={{ colorScheme: "dark" }}
                     />
-                    <span className="block mt-1.5 text-[10px] text-white/45">
-                      If no date was on file, today’s date and year were saved automatically.
-                    </span>
                   </label>
-                ) : null}
+                )}
+
+                {anniversaryOfferActive && (
+                  <label className="block -mt-1">
+                    <span className="block mb-1 text-[11px] text-white/75">
+                      Anniversary date
+                      <span className="ml-1 text-white/45">(optional)</span>
+                    </span>
+                    <input
+                      type="date"
+                      value={customerAnniversary}
+                      disabled={Boolean(savingSpecialDayDate)}
+                      onChange={(event) => handleSpecialDayDateChange("anniversary", event.target.value)}
+                      className="w-full rounded-lg bg-sidebar border border-sidebar-border px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-rose-300/60 disabled:opacity-60"
+                      style={{ colorScheme: "dark" }}
+                    />
+                  </label>
+                )}
+
+                {(birthdayOfferActive || anniversaryOfferActive) && (
+                  <p className="-mt-2 text-[10px] text-white/45">
+                    Any missing date is saved as today’s date, including the current year.
+                  </p>
+                )}
 
                 {savingSpecialDayDate && (
                   <p className="-mt-2 text-[10px] text-white/55" role="status">Saving customer date…</p>
