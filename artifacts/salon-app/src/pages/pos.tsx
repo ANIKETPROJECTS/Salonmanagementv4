@@ -211,6 +211,17 @@ export default function POS() {
   const resolvedSpecialDay = anniversaryOfferActive
     ? "anniversary"
     : birthdayOfferActive ? "birthday" : null;
+  // Existing customer dates are not offered as new special-day entries.
+  // Keep an active offer visible until staff turn it off for the current bill.
+  const canSelectBirthdayOffer = !customerDob || birthdayOfferActive;
+  const canSelectAnniversaryOffer = !customerAnniversary || anniversaryOfferActive;
+  const hasAvailableSpecialDayOffer = Boolean(customerId) && (
+    canSelectBirthdayOffer || canSelectAnniversaryOffer
+  );
+
+  useEffect(() => {
+    if (!hasAvailableSpecialDayOffer) setShowSpecialDayDialog(false);
+  }, [hasAvailableSpecialDayOffer]);
 
   // Apply exactly one customer offer. Anniversary takes precedence over
   // birthday, and either special-day offer replaces the active-member offer.
@@ -1121,7 +1132,7 @@ export default function POS() {
         )}
 
         {/* Compact birthday / anniversary offer shortcut */}
-        {customerId && (
+        {hasAvailableSpecialDayOffer && (
           <>
             <div className="mx-3 mt-2">
               <button
@@ -1160,7 +1171,11 @@ export default function POS() {
                   {([
                     { id: "birthday", label: "Birthday", discount: "30% off" },
                     { id: "anniversary", label: "Anniversary", discount: "40% off" },
-                  ] as const).map((occasion) => {
+                  ] as const)
+                    .filter((occasion) => occasion.id === "birthday"
+                      ? canSelectBirthdayOffer
+                      : canSelectAnniversaryOffer)
+                    .map((occasion) => {
                     const isActive = occasion.id === "birthday" ? birthdayOfferActive : anniversaryOfferActive;
                     return (
                       <button
@@ -1189,9 +1204,11 @@ export default function POS() {
                   })}
                 </div>
 
-                <p className="-mt-1 text-[10px] text-white/50">
-                  Both can be selected and saved. Anniversary takes priority at 40% when both offers are active.
-                </p>
+                {canSelectBirthdayOffer && canSelectAnniversaryOffer && (
+                  <p className="-mt-1 text-[10px] text-white/50">
+                    Both can be selected and saved. Anniversary takes priority at 40% when both offers are active.
+                  </p>
+                )}
 
                 {birthdayOfferActive && (
                   <label className="block -mt-1">
