@@ -162,11 +162,13 @@ export default function POS() {
   const [customerPhone, setCustomerPhone]   = useState<string>("");
   const [customerDob, setCustomerDob]       = useState<string>("");
   const [customerAnniversary, setCustomerAnniversary] = useState<string>("");
+  const [persistedCustomerDob, setPersistedCustomerDob] = useState<string>("");
+  const [persistedCustomerAnniversary, setPersistedCustomerAnniversary] = useState<string>("");
   const [specialDayOverrides, setSpecialDayOverrides] = useState({
     birthday: false,
     anniversary: false,
   });
-  const [savingSpecialDayDate, setSavingSpecialDayDate] = useState<"birthday" | "anniversary" | null>(null);
+  const [savingSpecialDayDate, setSavingSpecialDayDate] = useState(false);
   const [showSpecialDayDialog, setShowSpecialDayDialog] = useState(false);
   const [paymentSplits, setPaymentSplits]   = useState<PaymentSplit[]>([{ method: "upi", amount: "" }]);
   const [taxEnabled, setTaxEnabled]         = useState(false);
@@ -193,6 +195,7 @@ export default function POS() {
   const [isEditSubmitting, setIsEditSubmitting] = useState(false);
   const isEditLoading = useRef(false);
   const editBillIdRef = useRef(editBillId);
+  const specialDayFormDisabled = savingSpecialDayDate || createBill.isPending || isEditSubmitting;
   type POSFamilyAdd = { name: string; phone: string; gender: string; dob: string; anniversary: string };
   const EMPTY_POS_ADD: POSFamilyAdd = { name: "", phone: "", gender: "", dob: "", anniversary: "" };
   const [posFamilyToAdd, setPosFamilyToAdd] = useState<POSFamilyAdd[]>([]);
@@ -213,8 +216,8 @@ export default function POS() {
     : birthdayOfferActive ? "birthday" : null;
   // Existing customer dates are not offered as new special-day entries.
   // Keep an active offer visible until staff turn it off for the current bill.
-  const canSelectBirthdayOffer = !customerDob || birthdayOfferActive;
-  const canSelectAnniversaryOffer = !customerAnniversary || anniversaryOfferActive;
+  const canSelectBirthdayOffer = !persistedCustomerDob || birthdayOfferActive;
+  const canSelectAnniversaryOffer = !persistedCustomerAnniversary || anniversaryOfferActive;
   const hasAvailableSpecialDayOffer = Boolean(customerId) && (
     canSelectBirthdayOffer || canSelectAnniversaryOffer
   );
@@ -307,6 +310,8 @@ export default function POS() {
         setCustomerPhone(bill.customerPhone || "");
         setCustomerDob(bill.customerDob || "");
         setCustomerAnniversary(bill.customerAnniversary || "");
+        setPersistedCustomerDob(bill.customerDob || "");
+        setPersistedCustomerAnniversary(bill.customerAnniversary || "");
         setSpecialDayOverrides({ birthday: false, anniversary: false });
         const restoredPayments = Array.isArray(bill.paymentBreakdown) && bill.paymentBreakdown.length > 0
           ? bill.paymentBreakdown
@@ -535,27 +540,30 @@ export default function POS() {
     setCart((prev) => prev.map((item) => ({ ...item, discountAmt: 0 })));
   };
 
-  const persistSpecialDayDate = async (occasion: "birthday" | "anniversary", date: string) => {
-    if (!customerId) return;
-    setSavingSpecialDayDate(occasion);
+  const saveSpecialDayDatesAfterBill = async (
+    cid: string,
+    dates: { birthday: string; anniversary: string },
+  ): Promise<string | null> => {
+    const updates: { dob?: string; anniversary?: string } = {};
+    if (dates.birthday) updates.dob = dates.birthday;
+    if (dates.anniversary) updates.anniversary = dates.anniversary;
+    if (!cid || Object.keys(updates).length === 0) return null;
+
+    setSavingSpecialDayDate(true);
     try {
-      const field = occasion === "birthday" ? "dob" : "anniversary";
-      const response = await fetch(`${API_BASE}/customers/${customerId}`, {
+      const response = await fetch(`${API_BASE}/customers/${cid}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [field]: date }),
+        body: JSON.stringify(updates),
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.error || "Could not save the date.");
-      await refetchCustomers();
+      void refetchCustomers();
+      return null;
     } catch (error: any) {
-      toast({
-        title: "Date not saved",
-        description: error?.message || "The offer is active for this bill, but the customer date could not be saved.",
-        variant: "destructive",
-      });
+      return error?.message || "The customer date could not be saved.";
     } finally {
-      setSavingSpecialDayDate(null);
+      setSavingSpecialDayDate(false);
     }
   };
 
@@ -565,7 +573,7 @@ export default function POS() {
   };
 
   const handleSpecialDayToggle = (occasion: "birthday" | "anniversary") => {
-    if (!customerId || savingSpecialDayDate) return;
+    if (!customerId || specialDayFormDisabled) return;
     const isActive = occasion === "birthday" ? birthdayOfferActive : anniversaryOfferActive;
     setSpecialDayOverrides((previous) => ({ ...previous, [occasion]: !isActive }));
     if (isActive) return;
@@ -575,16 +583,14 @@ export default function POS() {
       const today = getTodayLocalDate();
       if (occasion === "birthday") setCustomerDob(today);
       else setCustomerAnniversary(today);
-      void persistSpecialDayDate(occasion, today);
     }
   };
 
   const handleSpecialDayDateChange = (occasion: "birthday" | "anniversary", value: string) => {
-    if (!customerId || savingSpecialDayDate) return;
+    if (!customerId || specialDayFormDisabled) return;
     const date = value || getTodayLocalDate();
     if (occasion === "birthday") setCustomerDob(date);
     else setCustomerAnniversary(date);
-    void persistSpecialDayDate(occasion, date);
   };
 
   const selectCustomer = (c: any) => {
@@ -594,6 +600,8 @@ export default function POS() {
     setCustomerPhone(c.phone || "");
     setCustomerDob(c.dob || "");
     setCustomerAnniversary(c.anniversary || "");
+    setPersistedCustomerDob(c.dob || "");
+    setPersistedCustomerAnniversary(c.anniversary || "");
     setSpecialDayOverrides({ birthday: false, anniversary: false });
     setSelectedMemberParentName(c._isFamily ? c._parentName : "");
     setSelectedVoucher(null);
@@ -606,7 +614,9 @@ export default function POS() {
 
   const selectWalkIn = () => {
     setCustomerId(""); setCustomerName("Walk-in Customer"); setCustomerPhone("");
-    setCustomerDob(""); setCustomerAnniversary(""); setSelectedMemberParentName("");
+    setCustomerDob(""); setCustomerAnniversary("");
+    setPersistedCustomerDob(""); setPersistedCustomerAnniversary("");
+    setSelectedMemberParentName("");
     setSpecialDayOverrides({ birthday: false, anniversary: false });
     setShowCustomerDropdown(false); setCustomerSearch(""); setCustomerMembership(null);
     setCustomerVouchers([]); setSelectedVoucher(null);
@@ -697,6 +707,11 @@ export default function POS() {
     }
 
     const currentEditBillId = editBillIdRef.current;
+    const specialDayCustomerId = customerId;
+    const specialDayDatesToSave = {
+      birthday: birthdayOfferActive ? customerDob : "",
+      anniversary: anniversaryOfferActive ? customerAnniversary : "",
+    };
 
     const billData = {
       customerId: customerId || null, customerName: customerName || "Walk-in Customer", customerPhone: customerPhone || "",
@@ -736,6 +751,7 @@ export default function POS() {
           const errBody = await res.json().catch(() => ({}));
           throw new Error(errBody?.error || "Failed to update");
         }
+        const specialDayDateError = await saveSpecialDayDatesAfterBill(specialDayCustomerId, specialDayDatesToSave);
         if (customerId && cart.some(i => i.type === "membership")) await assignMembershipsForCustomer(customerId);
         // Save any new family members added during membership purchase
         if (customerId && posFamilyToAdd.filter(m => m.name.trim()).length > 0) {
@@ -749,9 +765,17 @@ export default function POS() {
             body: JSON.stringify({ familyMembers: merged }),
           }).catch(() => {});
         }
-        toast({ title: "✓ Invoice Updated!", description: `Bill updated successfully — ₹${finalAmount.toLocaleString("en-IN")}` });
+        toast(specialDayDateError
+          ? {
+              title: "Invoice updated, but date not saved",
+              description: `${specialDayDateError} The bill was updated successfully.`,
+              variant: "destructive",
+            }
+          : { title: "✓ Invoice Updated!", description: `Bill updated successfully — ₹${finalAmount.toLocaleString("en-IN")}` });
         setCart([]); setCustomerId(""); setCustomerName("Walk-in Customer"); setCustomerPhone("");
-        setCustomerDob(""); setCustomerAnniversary(""); setGlobalDiscountAmt(0); setCustomerMembership(null);
+        setCustomerDob(""); setCustomerAnniversary("");
+        setPersistedCustomerDob(""); setPersistedCustomerAnniversary("");
+        setGlobalDiscountAmt(0); setCustomerMembership(null);
         setSpecialDayOverrides({ birthday: false, anniversary: false });
         setCustomerVouchers([]); setSelectedVoucher(null);
          setPaymentSplits([{ method: "upi", amount: "" }]);
@@ -766,6 +790,7 @@ export default function POS() {
       // New bill mode
       createBill.mutate({ data: billData as any }, {
         onSuccess: async (bill: any) => {
+          const specialDayDateError = await saveSpecialDayDatesAfterBill(specialDayCustomerId, specialDayDatesToSave);
           if (customerId && cart.some(i => i.type === "membership")) await assignMembershipsForCustomer(customerId);
           // Save any new family members added during membership purchase
           if (customerId && posFamilyToAdd.filter(m => m.name.trim()).length > 0) {
@@ -779,9 +804,17 @@ export default function POS() {
               body: JSON.stringify({ familyMembers: merged }),
             }).catch(() => {});
           }
-          toast({ title: "✓ Bill Generated!", description: `${(bill as any).billNumber} — ₹${finalAmount.toLocaleString("en-IN")}` });
+          toast(specialDayDateError
+            ? {
+                title: "Bill generated, but date not saved",
+                description: `${specialDayDateError} Bill ${(bill as any).billNumber} was generated successfully.`,
+                variant: "destructive",
+              }
+            : { title: "✓ Bill Generated!", description: `${(bill as any).billNumber} — ₹${finalAmount.toLocaleString("en-IN")}` });
           setCart([]); setCustomerId(""); setCustomerName("Walk-in Customer"); setCustomerPhone("");
-          setCustomerDob(""); setCustomerAnniversary(""); setGlobalDiscountAmt(0); setCustomerMembership(null);
+          setCustomerDob(""); setCustomerAnniversary("");
+          setPersistedCustomerDob(""); setPersistedCustomerAnniversary("");
+          setGlobalDiscountAmt(0); setCustomerMembership(null);
           setSpecialDayOverrides({ birthday: false, anniversary: false });
           setCustomerVouchers([]); setSelectedVoucher(null);
            setPaymentSplits([{ method: "upi", amount: "" }]);
