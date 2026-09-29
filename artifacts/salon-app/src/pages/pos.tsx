@@ -161,6 +161,8 @@ export default function POS() {
   const [customerPhone, setCustomerPhone]   = useState<string>("");
   const [customerDob, setCustomerDob]       = useState<string>("");
   const [customerAnniversary, setCustomerAnniversary] = useState<string>("");
+  const [specialDayOverride, setSpecialDayOverride] = useState<"birthday" | "anniversary" | "none" | null>(null);
+  const [savingSpecialDayDate, setSavingSpecialDayDate] = useState<"birthday" | "anniversary" | null>(null);
   const [paymentSplits, setPaymentSplits]   = useState<PaymentSplit[]>([{ method: "upi", amount: "" }]);
   const [taxEnabled, setTaxEnabled]         = useState(false);
   const [taxRate, setTaxRate]               = useState(18);
@@ -203,19 +205,25 @@ export default function POS() {
     return `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   }, []);
 
+  const anniversaryMatchesToday = customerAnniversary?.length >= 7 && customerAnniversary.substring(5) === todayMMDD;
+  const birthdayMatchesToday = customerDob?.length >= 7 && customerDob.substring(5) === todayMMDD;
+  const resolvedSpecialDay = specialDayOverride === null
+    ? anniversaryMatchesToday ? "anniversary" : birthdayMatchesToday ? "birthday" : null
+    : specialDayOverride === "none" ? null : specialDayOverride;
+
   // Apply exactly one customer offer. Anniversary takes precedence over
   // birthday, and either special-day offer replaces the active-member offer.
   const { autoDiscountPct, specialLabel, membershipLabel } = useMemo(() => {
     const hasActiveMembership = Boolean(customerMembership);
 
-    if (customerAnniversary?.length >= 7 && customerAnniversary.substring(5) === todayMMDD)
+    if (resolvedSpecialDay === "anniversary")
       return { autoDiscountPct: 40, specialLabel: "💐 Anniversary Special — 40% off", membershipLabel: null };
-    if (customerDob?.length >= 7 && customerDob.substring(5) === todayMMDD)
+    if (resolvedSpecialDay === "birthday")
       return { autoDiscountPct: 30, specialLabel: "🎂 Birthday Special — 30% off", membershipLabel: null };
     if (hasActiveMembership)
       return { autoDiscountPct: 20, specialLabel: null, membershipLabel: `🏷 ${customerMembership.membershipName} — 20% off` };
     return { autoDiscountPct: 0, specialLabel: null, membershipLabel: null };
-  }, [customerDob, customerAnniversary, customerMembership, todayMMDD]);
+  }, [resolvedSpecialDay, customerMembership]);
 
   // A voucher replaces every other offer on the bill. It discounts service
   // value only, while products remain at their normal price.
@@ -287,6 +295,7 @@ export default function POS() {
         setCustomerPhone(bill.customerPhone || "");
         setCustomerDob(bill.customerDob || "");
         setCustomerAnniversary(bill.customerAnniversary || "");
+        setSpecialDayOverride(null);
         const restoredPayments = Array.isArray(bill.paymentBreakdown) && bill.paymentBreakdown.length > 0
           ? bill.paymentBreakdown
               .filter((payment: any) => ["cash", "upi", "card", "wallet"].includes(payment.method))
@@ -514,6 +523,60 @@ export default function POS() {
     setCart((prev) => prev.map((item) => ({ ...item, discountAmt: 0 })));
   };
 
+  const persistSpecialDayDate = async (occasion: "birthday" | "anniversary", date: string) => {
+    if (!customerId) return;
+    setSavingSpecialDayDate(occasion);
+    try {
+      const field = occasion === "birthday" ? "dob" : "anniversary";
+      const response = await fetch(`${API_BASE}/customers/${customerId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [field]: date }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Could not save the date.");
+      await refetchCustomers();
+    } catch (error: any) {
+      toast({
+        title: "Date not saved",
+        description: error?.message || "The offer is active for this bill, but the customer date could not be saved.",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingSpecialDayDate(null);
+    }
+  };
+
+  const getTodayLocalDate = () => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  };
+
+  const handleSpecialDayToggle = (occasion: "birthday" | "anniversary") => {
+    if (!customerId || savingSpecialDayDate) return;
+    if (resolvedSpecialDay === occasion) {
+      setSpecialDayOverride("none");
+      return;
+    }
+
+    setSpecialDayOverride(occasion);
+    const currentDate = occasion === "birthday" ? customerDob : customerAnniversary;
+    if (!currentDate) {
+      const today = getTodayLocalDate();
+      if (occasion === "birthday") setCustomerDob(today);
+      else setCustomerAnniversary(today);
+      void persistSpecialDayDate(occasion, today);
+    }
+  };
+
+  const handleSpecialDayDateChange = (occasion: "birthday" | "anniversary", value: string) => {
+    if (!customerId || savingSpecialDayDate) return;
+    const date = value || getTodayLocalDate();
+    if (occasion === "birthday") setCustomerDob(date);
+    else setCustomerAnniversary(date);
+    void persistSpecialDayDate(occasion, date);
+  };
+
   const selectCustomer = (c: any) => {
     const cid = c.id || c._id;
     setCustomerId(cid);
@@ -521,6 +584,7 @@ export default function POS() {
     setCustomerPhone(c.phone || "");
     setCustomerDob(c.dob || "");
     setCustomerAnniversary(c.anniversary || "");
+    setSpecialDayOverride(null);
     setSelectedMemberParentName(c._isFamily ? c._parentName : "");
     setSelectedVoucher(null);
     setCustomerVouchers([]);
@@ -533,6 +597,7 @@ export default function POS() {
   const selectWalkIn = () => {
     setCustomerId(""); setCustomerName("Walk-in Customer"); setCustomerPhone("");
     setCustomerDob(""); setCustomerAnniversary(""); setSelectedMemberParentName("");
+    setSpecialDayOverride(null);
     setShowCustomerDropdown(false); setCustomerSearch(""); setCustomerMembership(null);
     setCustomerVouchers([]); setSelectedVoucher(null);
   };
@@ -677,6 +742,7 @@ export default function POS() {
         toast({ title: "✓ Invoice Updated!", description: `Bill updated successfully — ₹${finalAmount.toLocaleString("en-IN")}` });
         setCart([]); setCustomerId(""); setCustomerName("Walk-in Customer"); setCustomerPhone("");
         setCustomerDob(""); setCustomerAnniversary(""); setGlobalDiscountAmt(0); setCustomerMembership(null);
+        setSpecialDayOverride(null);
         setCustomerVouchers([]); setSelectedVoucher(null);
          setPaymentSplits([{ method: "upi", amount: "" }]);
         setPosFamilyToAdd([]); setShowPosFamilySection(false);
@@ -706,6 +772,7 @@ export default function POS() {
           toast({ title: "✓ Bill Generated!", description: `${(bill as any).billNumber} — ₹${finalAmount.toLocaleString("en-IN")}` });
           setCart([]); setCustomerId(""); setCustomerName("Walk-in Customer"); setCustomerPhone("");
           setCustomerDob(""); setCustomerAnniversary(""); setGlobalDiscountAmt(0); setCustomerMembership(null);
+          setSpecialDayOverride(null);
           setCustomerVouchers([]); setSelectedVoucher(null);
            setPaymentSplits([{ method: "upi", amount: "" }]);
           setPosFamilyToAdd([]); setShowPosFamilySection(false);
@@ -1051,6 +1118,69 @@ export default function POS() {
                 </p>
               )}
             </div>
+          </div>
+        )}
+
+        {/* Birthday / anniversary offer shortcut */}
+        {customerId && (
+          <div className="mx-3 mt-2 p-2.5 rounded-2xl bg-sidebar-accent border border-sidebar-border/60">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[10px] uppercase tracking-widest font-bold text-white">Today's Special Offer</p>
+              {savingSpecialDayDate && <span className="text-[9px] text-white/50">Saving date…</span>}
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                { id: "birthday", label: "Birthday", discount: "30% off" },
+                { id: "anniversary", label: "Anniversary", discount: "40% off" },
+              ] as const).map((occasion) => {
+                const isActive = resolvedSpecialDay === occasion.id;
+                return (
+                  <button
+                    key={occasion.id}
+                    type="button"
+                    aria-pressed={isActive}
+                    disabled={Boolean(savingSpecialDayDate)}
+                    onClick={() => handleSpecialDayToggle(occasion.id)}
+                    className={`rounded-xl px-2.5 py-2 text-left transition-colors disabled:opacity-60 ${
+                      isActive
+                        ? "bg-rose-500/25 border border-rose-300/50 text-white"
+                        : "bg-sidebar border border-sidebar-border text-white/75 hover:text-white hover:bg-sidebar/80"
+                    }`}
+                  >
+                    <span className="flex items-center justify-between gap-1">
+                      <span className="text-[11px] font-semibold">{occasion.label} today</span>
+                      <span className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                        isActive ? "border-rose-200 bg-rose-300" : "border-white/40"
+                      }`}>
+                        {isActive && <span className="w-1.5 h-1.5 rounded-full bg-rose-900" />}
+                      </span>
+                    </span>
+                    <span className="block mt-0.5 text-[9px] text-white/55">{occasion.discount}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {specialDayOverride && specialDayOverride !== "none" && (
+              <label className="block mt-2">
+                <span className="block mb-1 text-[10px] text-white/70">
+                  {specialDayOverride === "birthday" ? "Birthday" : "Anniversary"} date
+                  <span className="ml-1 text-white/45">(optional)</span>
+                </span>
+                <input
+                  type="date"
+                  value={specialDayOverride === "birthday" ? customerDob : customerAnniversary}
+                  disabled={savingSpecialDayDate === specialDayOverride}
+                  onChange={(event) => handleSpecialDayDateChange(specialDayOverride, event.target.value)}
+                  className="w-full rounded-lg bg-sidebar border border-sidebar-border px-2.5 py-1.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-rose-300/60 disabled:opacity-60"
+                />
+                <span className="block mt-1 text-[9px] text-white/45">
+                  If no date was on file, today’s date and year were saved automatically. You can change it here.
+                </span>
+              </label>
+            )}
+            {selectedVoucher && (
+              <p className="mt-2 text-[9px] text-amber-200/80">The selected voucher replaces this special offer on the bill.</p>
+            )}
           </div>
         )}
 
