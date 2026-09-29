@@ -95,10 +95,6 @@ function StaffPicker({ staff, value, onChange, placeholder }: {
       : { background: "hsl(var(--sidebar))", color: "rgba(255,255,255,0.7)", border: "1.5px solid transparent" };
   };
 
-  const specialDayDateField = specialDayOverride && specialDayOverride !== "none"
-    ? specialDayOverride
-    : resolvedSpecialDay;
-
   return (
     <div className="flex-1 min-w-0">
       <button ref={btnRef} type="button" onClick={openDropdown}
@@ -787,6 +783,10 @@ export default function POS() {
       });
     }
   };
+
+  const specialDayDateField = specialDayOverride && specialDayOverride !== "none"
+    ? specialDayOverride
+    : resolvedSpecialDay;
 
   return (
     <div className="flex h-screen overflow-hidden bg-background" style={poppins}>
