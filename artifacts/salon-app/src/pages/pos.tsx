@@ -1170,6 +1170,7 @@ export default function POS() {
             <div className="mx-3 mt-2">
               <button
                 type="button"
+                disabled={specialDayFormDisabled}
                 onClick={() => setShowSpecialDayDialog(true)}
                 className="w-full min-h-9 flex items-center gap-2 rounded-xl px-3 py-2 bg-sidebar-accent border border-sidebar-border/60 text-left text-white hover:bg-sidebar/80 transition-colors"
                 aria-label="Open birthday and anniversary offer settings"
@@ -1196,7 +1197,7 @@ export default function POS() {
                 <DialogHeader className="pr-6 text-left">
                   <DialogTitle className="text-base font-bold text-white">Special day offer</DialogTitle>
                   <DialogDescription className="text-xs text-white/60">
-                    Apply a birthday or anniversary offer and save the date to this customer.
+                    Apply an offer now. The date is saved to the customer when the bill is generated.
                   </DialogDescription>
                 </DialogHeader>
 
@@ -1215,7 +1216,7 @@ export default function POS() {
                         key={occasion.id}
                         type="button"
                         aria-pressed={isActive}
-                        disabled={Boolean(savingSpecialDayDate)}
+                        disabled={specialDayFormDisabled}
                         onClick={() => handleSpecialDayToggle(occasion.id)}
                         className={`rounded-xl px-3 py-2.5 text-left transition-colors disabled:opacity-60 ${
                           isActive
@@ -1252,7 +1253,7 @@ export default function POS() {
                     <input
                       type="date"
                       value={customerDob}
-                      disabled={Boolean(savingSpecialDayDate)}
+                      disabled={specialDayFormDisabled}
                       onChange={(event) => handleSpecialDayDateChange("birthday", event.target.value)}
                       className="w-full rounded-lg bg-sidebar border border-sidebar-border px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-rose-300/60 disabled:opacity-60"
                       style={{ colorScheme: "dark" }}
@@ -1269,7 +1270,7 @@ export default function POS() {
                     <input
                       type="date"
                       value={customerAnniversary}
-                      disabled={Boolean(savingSpecialDayDate)}
+                      disabled={specialDayFormDisabled}
                       onChange={(event) => handleSpecialDayDateChange("anniversary", event.target.value)}
                       className="w-full rounded-lg bg-sidebar border border-sidebar-border px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-rose-300/60 disabled:opacity-60"
                       style={{ colorScheme: "dark" }}
@@ -1279,7 +1280,7 @@ export default function POS() {
 
                 {(birthdayOfferActive || anniversaryOfferActive) && (
                   <p className="-mt-2 text-[10px] text-white/45">
-                    Any missing date is saved as today’s date, including the current year.
+                    Any missing date defaults to today, including the current year, and is saved when the bill is generated.
                   </p>
                 )}
 
