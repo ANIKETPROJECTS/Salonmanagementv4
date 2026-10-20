@@ -1,4 +1,4 @@
-import express, { type Express } from "express";
+import express, { type ErrorRequestHandler, type Express } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import path from "path";
@@ -38,6 +38,13 @@ connectMongo().catch((err) => {
 });
 
 app.use("/api", router);
+
+const apiErrorHandler: ErrorRequestHandler = (err, req, res, next) => {
+  logger.error({ err, method: req.method, path: req.path }, "Unhandled request error");
+  if (res.headersSent) return next(err);
+  res.status(500).json({ error: "Internal server error" });
+};
+app.use(apiErrorHandler);
 
 // In production, serve the built React app and handle SPA routing
 if (process.env.NODE_ENV === "production") {

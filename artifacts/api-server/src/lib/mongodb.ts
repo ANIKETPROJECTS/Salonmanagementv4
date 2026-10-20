@@ -15,6 +15,7 @@ mongoose.set("bufferCommands", false);
 
 let isConnected = false;
 let isConnecting = false;
+let isShuttingDown = false;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
 const CONNECT_OPTIONS = {
@@ -25,9 +26,10 @@ const CONNECT_OPTIONS = {
 };
 
 function scheduleReconnect() {
-  if (reconnectTimer) return;
+  if (isShuttingDown || reconnectTimer) return;
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
+    if (isShuttingDown) return;
     connectMongo().catch((err) => {
       logger.error({ err }, "MongoDB reconnect attempt failed");
     });
@@ -36,6 +38,7 @@ function scheduleReconnect() {
 
 mongoose.connection.on("disconnected", () => {
   isConnected = false;
+  if (isShuttingDown) return;
   logger.error("MongoDB disconnected — will attempt to reconnect");
   scheduleReconnect();
 });
@@ -45,11 +48,13 @@ mongoose.connection.on("error", (err) => {
 });
 
 mongoose.connection.on("reconnected", () => {
+  if (isShuttingDown) return;
   isConnected = true;
   logger.info("MongoDB reconnected");
 });
 
 export async function connectMongo() {
+  if (isShuttingDown) return;
   // readyState: 0 = disconnected, 1 = connected, 2 = connecting, 3 = disconnecting
   const readyState = mongoose.connection.readyState;
   if (isConnected || isConnecting || readyState === 1 || readyState === 2) return;
@@ -65,6 +70,22 @@ export async function connectMongo() {
     throw err;
   } finally {
     isConnecting = false;
+  }
+}
+
+export function isMongoConnected() {
+  return mongoose.connection.readyState === 1;
+}
+
+export async function disconnectMongo() {
+  isShuttingDown = true;
+  isConnected = false;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  if (mongoose.connection.readyState !== 0) {
+    await mongoose.disconnect();
   }
 }
 

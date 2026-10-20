@@ -1,5 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { disconnectMongo } from "./lib/mongodb.js";
 
 const rawPort = process.env["PORT"] ?? "8080";
 
@@ -23,13 +24,12 @@ process.on("uncaughtException", (err) => {
   process.exit(1);
 });
 
-const server = app.listen(port, (err) => {
-  if (err) {
-    logger.error({ err }, "Error listening on port");
-    process.exit(1);
-  }
-
+const server = app.listen(port, () => {
   logger.info({ port }, "Server listening");
+});
+server.on("error", (err) => {
+  logger.error({ err, port }, "HTTP server error — exiting for restart");
+  process.exit(1);
 });
 
 // Avoid hung sockets piling up if a client (or the reverse proxy) leaves a
@@ -37,10 +37,42 @@ const server = app.listen(port, (err) => {
 server.keepAliveTimeout = 65000;
 server.headersTimeout = 66000;
 
+let isShuttingDown = false;
+
+server.on("close", () => {
+  if (isShuttingDown) return;
+  logger.fatal("HTTP server closed unexpectedly — exiting for restart");
+  process.exit(1);
+});
+
 function shutdown(signal: string) {
+  if (isShuttingDown) {
+    logger.warn({ signal }, "Shutdown already in progress");
+    return;
+  }
+  isShuttingDown = true;
   logger.info({ signal }, "Shutting down");
-  server.close(() => process.exit(0));
-  setTimeout(() => process.exit(1), 10000).unref();
+  const shutdownTimeout = setTimeout(() => {
+    logger.error({ signal }, "Graceful shutdown timed out; forcing exit");
+    process.exit(1);
+  }, 15000);
+
+  server.close(async (err) => {
+    let exitCode = 0;
+    if (err) {
+      logger.error({ err, signal }, "HTTP server failed to close cleanly");
+      exitCode = 1;
+    }
+    try {
+      await disconnectMongo();
+    } catch (disconnectError) {
+      logger.error({ err: disconnectError, signal }, "MongoDB failed to close cleanly");
+      exitCode = 1;
+    }
+    clearTimeout(shutdownTimeout);
+    logger.info({ signal, exitCode }, "Shutdown complete");
+    process.exitCode = exitCode;
+  });
 }
 
 process.on("SIGTERM", () => shutdown("SIGTERM"));

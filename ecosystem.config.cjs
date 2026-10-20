@@ -7,6 +7,7 @@ module.exports = {
   apps: [
     {
       name: "at-smart-salon",
+      cwd: __dirname,
       script: "node",
       args: "--enable-source-maps ./artifacts/api-server/dist/index.mjs",
       env: {
@@ -15,8 +16,13 @@ module.exports = {
         MONGODB_URI: process.env.MONGODB_URI,
       },
       instances: 1,
+      exec_mode: "fork",
       autorestart: true,
       watch: false,
+      min_uptime: "10s",
+      max_restarts: 10,
+      exp_backoff_restart_delay: 1000,
+      kill_timeout: 15000,
       max_memory_restart: "500M",
       log_date_format: "YYYY-MM-DD HH:mm:ss",
     },
