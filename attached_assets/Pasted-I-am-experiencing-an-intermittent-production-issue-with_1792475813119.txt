@@ -1,0 +1,140 @@
+I am experiencing an intermittent production issue with my application deployed on an Ubuntu VPS using PM2 and Nginx. I have already imported the complete project into this Replit workspace.
+
+### Production Environment
+- Server: Ubuntu VPS
+- Process manager: PM2
+- Reverse proxy: Nginx
+- Runtime: Node.js
+- Deployment: Production application hosted on my VPS
+- PM2 process name: `at-smart-salon`
+- PM2 process ID before deletion: `15`
+
+### Issue Description
+The application was listed as `online` in PM2, but the webpage was not working correctly. I deleted the existing PM2 process and started the application again, after which the webpage loaded properly.
+
+Relevant PM2 logs:
+
+The application successfully served requests:
+- `GET /` returned HTTP 200.
+- JavaScript assets returned HTTP 200.
+- CSS assets returned HTTP 200.
+- API endpoints such as `/api/bills`, `/api/dashboard/stats`, and `/api/appointments/reminders` were responding with HTTP 200 or 304.
+
+However, the logs eventually showed:
+
+`2026-10-17 07:09:28: {"level":30,"pid":891676,"signal":"SIGINT","msg":"Shutting down"}`
+
+The PM2 process had previously accumulated approximately 172 restarts, according to the PM2 process list. The exact meaning and history of this restart count have not yet been investigated.
+
+After deleting and recreating the PM2 process, the website started working again.
+
+### Your Tasks
+
+**1. Investigate the application**
+Inspect the entire project, including:
+- Application entry points and server startup code.
+- `package.json` and available start scripts.
+- PM2 ecosystem configuration, if present.
+- HTTP server initialization and graceful shutdown handlers.
+- Database connections and connection pooling.
+- API routes and error handling.
+- Background jobs, timers, and scheduled tasks.
+- Environment variable handling.
+- Static asset serving and frontend-backend communication.
+- Any potential memory leaks, unhandled promise rejections, uncaught exceptions, or event-loop blocking.
+
+**2. Identify possible causes of the failure**
+
+Determine why the application could stop responding while PM2 still reports it as online.
+
+Investigate whether:
+- The process is crashing or restarting repeatedly.
+- An external command, deployment, or script is terminating the process.
+- The application is becoming unresponsive due to database or network connections.
+- Resource exhaustion or memory leaks could be involved.
+- The shutdown handler is behaving incorrectly.
+- PM2 is configured with incorrect restart policies, working directories, environment variables, or execution modes.
+- Nginx could be returning errors even when the Node.js process is running.
+
+Do not assume that SIGINT caused the original webpage issue. Establish what the available code and logs can actually prove.
+
+**3. Implement appropriate permanent fixes**
+
+After identifying specific problems in the code, make the necessary changes to:
+- Handle application shutdown signals correctly.
+- Close database connections and other resources gracefully.
+- Prevent unhandled asynchronous errors from silently leaving the application in an unhealthy state.
+- Add appropriate error logging without exposing credentials, tokens, or sensitive user data.
+- Configure sensible restart and shutdown behavior where appropriate.
+- Ensure the application starts reliably and reports startup failures clearly.
+- Avoid unnecessary restarts and prevent restart loops.
+- Add an appropriate health-check endpoint if the application architecture supports it.
+- Ensure any health check verifies meaningful application dependencies where appropriate, without exposing sensitive information.
+
+Do not introduce unnecessary dependencies or change working business logic.
+
+**4. Review production deployment configuration**
+
+Determine whether the existing project has a PM2 ecosystem configuration file. If one exists, review it and recommend or implement suitable settings for this application's architecture.
+
+Pay particular attention to:
+- `autorestart`
+- `max_restarts`
+- `min_uptime`
+- `restart_delay` or `exp_backoff_restart_delay`
+- `kill_timeout`
+- `max_memory_restart`
+- Cluster versus fork mode
+- Instance count
+- Environment variables
+- Logging configuration
+
+Do not blindly apply every setting. Choose values appropriate to the application's actual requirements. Do not enable cluster mode or increase instance counts without checking whether the application and its background jobs support multiple instances.
+
+**5. Improve diagnostics**
+
+Make sure future failures can be diagnosed using application logs and PM2 commands.
+
+Log meaningful events such as:
+- Application startup and successful initialization.
+- Database connection failures and recovery.
+- Unhandled errors.
+- Graceful shutdown initiation and completion.
+- The shutdown signal received.
+- Unexpected server closure.
+- Failures of critical dependencies.
+
+Avoid logging passwords, database URIs containing credentials, API keys, session cookies, or other secrets.
+
+**6. Validate the changes**
+
+After implementing the fixes:
+- Run the available tests.
+- Run the build, if applicable.
+- Verify that the production start command works.
+- Check for incorrect imports, missing dependencies, and configuration errors.
+- Verify that shutdown handling does not interfere with normal operation.
+- Explain any checks that cannot be performed in Replit because the production VPS or its environment is unavailable.
+
+### Important Constraints
+- Do not delete or recreate production PM2 processes.
+- Do not connect to or modify my production VPS.
+- Do not modify production databases or delete any application data.
+- Do not invent a root cause without supporting evidence.
+- Do not make unrelated changes to the project.
+- Do not expose or request production secrets in the source code or logs.
+- Preserve existing application functionality and API compatibility.
+
+### Expected Output
+
+After inspecting the project, provide:
+
+1. The most likely root cause, with supporting evidence and confidence level.
+2. The specific files and code responsible for any confirmed issues.
+3. The fixes implemented, with a concise explanation of each.
+4. Any remaining possible causes that require production logs or VPS access to verify.
+5. The recommended PM2 configuration and startup commands for deployment.
+6. A step-by-step verification procedure for the next time the website becomes unavailable.
+7. Any production changes that I must apply manually.
+
+Start by inspecting the existing code and configuration. Diagnose first, then implement only justified fixes. If the root cause cannot be determined from the repository alone, clearly distinguish confirmed code defects from production-level hypotheses.
