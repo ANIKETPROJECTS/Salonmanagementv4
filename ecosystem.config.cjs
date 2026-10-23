@@ -20,9 +20,11 @@ module.exports = {
       autorestart: true,
       watch: false,
       min_uptime: "10s",
-      max_restarts: 10,
+      // PM2 defaults to 16 unstable restarts; keep trying through transient
+      // failures instead of leaving the service offline until manual action.
+      max_restarts: 100000,
       exp_backoff_restart_delay: 1000,
-      kill_timeout: 15000,
+      kill_timeout: 20000,
       max_memory_restart: "500M",
       log_date_format: "YYYY-MM-DD HH:mm:ss",
     },
